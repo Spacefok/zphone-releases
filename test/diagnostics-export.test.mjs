@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import AdmZip from 'adm-zip';
+import {Diagnostics} from '../desktop/diagnostics.mjs';
+import {diagnosticArchive,diagnosticName,saveDiagnostics} from '../desktop/diagnostics-export.mjs';
+test('export flushes current records, includes only allowlisted files and re-redacts archives',async()=>{
+  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'zphone-export-')),logger=new Diagnostics(directory);
+  const secret='private-old-test-password',home='C:\\Users\\PrivateUser\\AppData\\file';
+  await fs.writeFile(path.join(directory,'diagnostics.1.jsonl'),JSON.stringify({time:new Date().toISOString(),session:logger.session,event:'core.log',data:{password:secret,message:home}})+'\nnot-json\n');
+  await fs.writeFile(path.join(directory,'access.enc'),'never include');await fs.writeFile(path.join(directory,'session.json'),'never include');
+  logger.write('user.mark',{fresh:true});
+  logger.write('user.export_diagnostics',{fresh:true});
+  const zip=new AdmZip(await diagnosticArchive(logger,{version:'0.3.1',password:secret,profiles:[secret]}));
+  assert.deepEqual(zip.getEntries().map(e=>e.entryName).sort(),['diagnostics.1.jsonl','diagnostics.jsonl','summary.json']);
+  const all=zip.getEntries().map(e=>e.getData().toString()).join('\n');assert(!all.includes(secret));assert(!all.includes('PrivateUser'));assert(all.includes('user.mark'));assert(all.includes('core.log'));assert(all.includes('user.export_diagnostics'));assert.equal(JSON.parse(zip.readAsText('summary.json')).skipped,1);
+  const file=path.join(directory,diagnosticName());await saveDiagnostics(logger,file,{});assert(new AdmZip(await fs.readFile(file)).getEntry('summary.json'));assert.notEqual(diagnosticName(),diagnosticName());
+  await fs.rm(directory,{recursive:true,force:true});
+});

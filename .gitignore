@@ -1,0 +1,17 @@
+node_modules/
+dist/
+release/
+publication/
+runtime/
+downloads/
+android/.gradle/
+android/local.properties
+android/**/build/
+android/app/libs/
+android/app/src/main/jniLibs/
+android/app/src/main/assets/
+*.zphone
+*.jks
+*.keystore
+*.pem
+.env*

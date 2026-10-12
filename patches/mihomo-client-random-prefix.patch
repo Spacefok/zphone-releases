@@ -1,0 +1,201 @@
+diff --git a/adapter/outbound/trusttunnel.go b/adapter/outbound/trusttunnel.go
+index 81f784d..b15f2c9 100644
+--- a/adapter/outbound/trusttunnel.go
++++ b/adapter/outbound/trusttunnel.go
+@@ -19,22 +19,23 @@ type TrustTunnel struct {
+ 
+ type TrustTunnelOption struct {
+ 	BasicOption
+-	Name              string     `proxy:"name"`
+-	Server            string     `proxy:"server"`
+-	Port              int        `proxy:"port"`
+-	UserName          string     `proxy:"username,omitempty"`
+-	Password          string     `proxy:"password,omitempty"`
+-	ALPN              []string   `proxy:"alpn,omitempty"`
+-	SNI               string     `proxy:"sni,omitempty"`
+-	ECHOpts           ECHOptions `proxy:"ech-opts,omitempty"`
+-	ClientFingerprint string     `proxy:"client-fingerprint,omitempty"`
+-	SkipCertVerify    bool       `proxy:"skip-cert-verify,omitempty"`
+-	NameCertVerify    string     `proxy:"name-cert-verify,omitempty"`
+-	Fingerprint       string     `proxy:"fingerprint,omitempty"`
+-	Certificate       string     `proxy:"certificate,omitempty"`
+-	PrivateKey        string     `proxy:"private-key,omitempty"`
+-	UDP               bool       `proxy:"udp,omitempty"`
+-	HealthCheck       bool       `proxy:"health-check,omitempty"`
++	Name               string     `proxy:"name"`
++	Server             string     `proxy:"server"`
++	Port               int        `proxy:"port"`
++	UserName           string     `proxy:"username,omitempty"`
++	Password           string     `proxy:"password,omitempty"`
++	ALPN               []string   `proxy:"alpn,omitempty"`
++	SNI                string     `proxy:"sni,omitempty"`
++	ECHOpts            ECHOptions `proxy:"ech-opts,omitempty"`
++	ClientFingerprint  string     `proxy:"client-fingerprint,omitempty"`
++	ClientRandomPrefix string     `proxy:"client-random-prefix,omitempty"`
++	SkipCertVerify     bool       `proxy:"skip-cert-verify,omitempty"`
++	NameCertVerify     string     `proxy:"name-cert-verify,omitempty"`
++	Fingerprint        string     `proxy:"fingerprint,omitempty"`
++	Certificate        string     `proxy:"certificate,omitempty"`
++	PrivateKey         string     `proxy:"private-key,omitempty"`
++	UDP                bool       `proxy:"udp,omitempty"`
++	HealthCheck        bool       `proxy:"health-check,omitempty"`
+ 	// quic options
+ 	Quic                 bool   `proxy:"quic,omitempty"`
+ 	CongestionController string `proxy:"congestion-controller,omitempty"`
+@@ -114,6 +115,7 @@ func NewTrustTunnel(option TrustTunnelOption) (*TrustTunnel, error) {
+ 		QUICCwnd:              option.CWND,
+ 		QUICBBRProfile:        option.BBRProfile,
+ 		HealthCheck:           option.HealthCheck,
++		ClientRandomPrefix:    option.ClientRandomPrefix,
+ 		MaxConnections:        option.MaxConnections,
+ 		MinStreams:            option.MinStreams,
+ 		MaxStreams:            option.MaxStreams,
+diff --git a/transport/trusttunnel/client.go b/transport/trusttunnel/client.go
+index 9ba5df8..954a436 100644
+--- a/transport/trusttunnel/client.go
++++ b/transport/trusttunnel/client.go
+@@ -32,6 +32,7 @@ type ClientOptions struct {
+ 	Username              string
+ 	Password              string
+ 	TLSConfig             *vmess.TLSConfig
++	ClientRandomPrefix    string
+ 	QUIC                  bool
+ 	QUICCongestionControl string
+ 	QUICCwnd              int
+@@ -79,7 +80,7 @@ func NewClient(ctx context.Context, options ClientOptions) (client *Client, err
+ 		} else if !slices.Contains(options.TLSConfig.NextProtos, "h2") {
+ 			return nil, errors.New("require alpn h2")
+ 		}
+-		client.h2RoundTripper(options.TLSConfig)
++		client.h2RoundTripper(options.TLSConfig, options.ClientRandomPrefix)
+ 	}
+ 	if options.HealthCheck {
+ 		client.healthCheck = true
+@@ -87,7 +88,7 @@ func NewClient(ctx context.Context, options ClientOptions) (client *Client, err
+ 	return client, nil
+ }
+ 
+-func (c *Client) h2RoundTripper(tlsConfig *vmess.TLSConfig) {
++func (c *Client) h2RoundTripper(tlsConfig *vmess.TLSConfig, randomPrefix string) {
+ 	// use h2c mode to disallow the net/http fallback to http1.1
+ 	//
+ 	// Note that this usage is only applicable to our own net/http fork.
+@@ -101,7 +102,7 @@ func (c *Client) h2RoundTripper(tlsConfig *vmess.TLSConfig) {
+ 			if err != nil {
+ 				return nil, err
+ 			}
+-			tlsConn, err := vmess.StreamTLSConn(ctx, conn, tlsConfig)
++			tlsConn, err := streamTLSWithPrefix(ctx, conn, tlsConfig, randomPrefix)
+ 			if err != nil {
+ 				_ = conn.Close()
+ 				return nil, err
+diff --git a/transport/trusttunnel/random_prefix.go b/transport/trusttunnel/random_prefix.go
+new file mode 100644
+index 0000000..3865d85
+--- /dev/null
++++ b/transport/trusttunnel/random_prefix.go
+@@ -0,0 +1,43 @@
++package trusttunnel
++
++import (
++	"context"
++	"encoding/hex"
++	"errors"
++	"net"
++
++	tlsC "github.com/metacubex/mihomo/component/tls"
++	"github.com/metacubex/mihomo/transport/vmess"
++)
++
++// Keep the configured prefix inside ClientHello.random and preserve the
++// remaining cryptographically generated random bytes and normal TLS validation.
++func streamTLSWithPrefix(ctx context.Context, conn net.Conn, cfg *vmess.TLSConfig, prefix string) (net.Conn, error) {
++	if prefix == "" {
++		return vmess.StreamTLSConn(ctx, conn, cfg)
++	}
++	bytes, err := hex.DecodeString(prefix)
++	if err != nil || len(bytes) == 0 || len(bytes) > 16 {
++		return nil, errors.New("client-random-prefix must contain 1 to 16 hexadecimal bytes")
++	}
++	config, err := cfg.ToStdConfig()
++	if err != nil {
++		return nil, err
++	}
++	fingerprint, _ := tlsC.GetFingerprint("chrome")
++	client := tlsC.UClient(conn, tlsC.UConfig(config), fingerprint)
++	if err := client.BuildHandshakeState(); err != nil {
++		return nil, err
++	}
++	if len(client.HandshakeState.Hello.Random) != 32 {
++		return nil, errors.New("invalid TLS client random")
++	}
++	copy(client.HandshakeState.Hello.Random, bytes)
++	if err := client.MarshalClientHello(); err != nil {
++		return nil, err
++	}
++	if err := client.HandshakeContext(ctx); err != nil {
++		return nil, err
++	}
++	return client, nil
++}
+diff --git a/transport/trusttunnel/random_prefix_test.go b/transport/trusttunnel/random_prefix_test.go
+new file mode 100644
+index 0000000..468b0af
+--- /dev/null
++++ b/transport/trusttunnel/random_prefix_test.go
+@@ -0,0 +1,55 @@
++package trusttunnel
++
++import (
++	"bytes"
++	"context"
++	"encoding/binary"
++	"io"
++	"net"
++	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/transport/vmess"
++)
++
++func TestClientRandomPrefixOnWire(t *testing.T) {
++	client, server := net.Pipe()
++	defer client.Close()
++	defer server.Close()
++	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
++	defer cancel()
++	done := make(chan struct{})
++	go func() {
++		defer close(done)
++		_, _ = streamTLSWithPrefix(ctx, client, &vmess.TLSConfig{Host: "example.org"}, "0102030405060708")
++	}()
++	_ = server.SetReadDeadline(time.Now().Add(3 * time.Second))
++	header := make([]byte, 5)
++	if _, err := io.ReadFull(server, header); err != nil {
++		t.Fatal(err)
++	}
++	record := make([]byte, binary.BigEndian.Uint16(header[3:5]))
++	if _, err := io.ReadFull(server, record); err != nil {
++		t.Fatal(err)
++	}
++	if len(record) < 38 || record[0] != 1 {
++		t.Fatal("not a ClientHello")
++	}
++	random := record[6:38]
++	if !bytes.Equal(random[:8], []byte{1, 2, 3, 4, 5, 6, 7, 8}) {
++		t.Fatal("prefix missing from wire")
++	}
++	if bytes.Equal(random[8:], make([]byte, 24)) {
++		t.Fatal("random suffix not preserved")
++	}
++	server.Close()
++	<-done
++}
++
++func TestInvalidClientRandomPrefix(t *testing.T) {
++	for _, prefix := range []string{"0", "xx", "0000000000000000000000000000000000ff"} {
++		if _, err := streamTLSWithPrefix(context.Background(), nil, nil, prefix); err == nil {
++			t.Fatal("invalid prefix accepted")
++		}
++	}
++}

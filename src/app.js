@@ -1,0 +1,168 @@
+import {createIcons,Power,Unplug,Shield,SlidersHorizontal,CircleHelp,ChevronRight,ChevronDown,Sparkles,Route,Hand,Activity,UserRound,Check,X,Sun,Moon,Monitor,Download,Upload,RefreshCw,FileText,ExternalLink,LockKeyhole,Wifi,Signal,ShieldCheck,TriangleAlert,ArrowRight,RotateCw,MessageCircle,LoaderCircle,KeyRound,FolderOpen,Flag} from 'lucide';
+import {request,subscribe,platform} from './bridge.js';
+import {PROTOCOLS,VERSION} from '../shared/profiles.mjs';
+import {createMotion} from './motion.js';
+import './style.css';
+const icons={Power,Unplug,Shield,SlidersHorizontal,CircleHelp,ChevronRight,ChevronDown,Sparkles,Route,Hand,Activity,UserRound,Check,X,Sun,Moon,Monitor,Download,Upload,RefreshCw,FileText,ExternalLink,LockKeyhole,Wifi,Signal,ShieldCheck,TriangleAlert,ArrowRight,RotateCw,MessageCircle,LoaderCircle,KeyRound,FolderOpen,Flag};
+const root=document.getElementById('app');
+const motion=createMotion(root),regions=new WeakMap();
+const themeMedia=window.matchMedia('(prefers-color-scheme: dark)');
+const mobileMedia=window.matchMedia('(max-width: 480px)');
+let state={version:VERSION,platform,settings:{location:'auto',protocol:'auto',theme:'system',mode:'isolated',split:{mode:'all',apps:[]}},profiles:[],connection:{status:'off'}};
+let view='home',overlay=null,message='',update=null,updateBusy=false,diagnostic=null,pending=false,exportBusy=false;
+let apps=[],appsBusy=false,splitDraft=null,appQuery='',startupBusy=false;
+const splitNames={all:'Все приложения',exclude:'Выбранные без VPN',include:'Только выбранные через VPN'};
+const names={auto:'Автоматически',FIN:'Финляндия',AMS:'Нидерланды',TrustTunnel:'TrustTunnel',Mieru:'Mieru',NaiveProxy:'NaiveProxy',AmneziaWG:'AmneziaWG',Hysteria2:'Hysteria 2'};
+const escape=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const icon=name=>`<i data-lucide="${name}" aria-hidden="true"></i>`;
+const active=()=>['connecting','checking','recovering','connected','disconnecting'].includes(state.connection.status);
+const busy=()=>pending||['connecting','checking','recovering','disconnecting'].includes(state.connection.status);
+const flag=value=>value==='auto'?icon('sparkles'):`<img class="flag" src="./${value.toLowerCase()}.png" alt="">`;
+const button=(action,text,glyph,classes='',attrs='')=>`<button type="button" class="${classes}" data-action="${action}" ${attrs}>${glyph?icon(glyph):''}<span>${text}</span></button>`;
+function navigation(side=false){return `<nav class="${side?'side-nav':'bottom-nav'}" aria-label="Разделы">${[['home','Подключение','shield'],['settings','Настройки','sliders-horizontal'],['help','Помощь','circle-help']].map(([key,label,glyph])=>button('nav',label,glyph,'nav-item',`data-value="${key}" ${view===key?'aria-current="page"':''}`)).join('')}</nav>`;}
+function wordmark(){return `<div class="wordmark"><span class="brand-mark">${icon('unplug')}</span><span>Zphone</span></div>`;}
+function choice(kind,title){const value=state.settings[kind];return `<button type="button" class="choice" data-action="picker" data-value="${kind}" ${busy()?'disabled':''}><span class="choice-icon">${kind==='location'?flag(value):icon(value==='auto'?'sparkles':'route')}</span><span class="choice-copy"><small>${title}</small><strong>${escape(names[value])}</strong></span>${value!=='auto'?`<span class="manual">${icon('hand')}Вручную</span>`:''}${icon('chevron-right')}</button>`;}
+function home(){
+  const c=state.connection,connected=c.status==='connected';
+  const labels={off:['Не подключено','Готово к подключению'],connecting:['Подключаемся','Устанавливаем соединение'],checking:['Проверяем интернет','Ожидаем ответ через туннель'],recovering:['Пробуем другой доступ','Проверяем доступность'],connected:[state.settings.mode==='isolated'&&platform==='windows'?'Тест подключён':'Подключено',state.settings.mode==='isolated'&&platform==='windows'?'Системное подключение не изменено':'VPN активен'],error:['Нет ответа','Соединение не установлено']};
+  labels.disconnecting=['Отключаемся','Завершаем тестовое соединение'];
+  if(c.status==='recovering')labels.recovering=['Восстанавливаем соединение',c.retryAttempt?'Попытка '+c.retryAttempt+' из 5':'Проверяем доступность'];
+  const [title,sub]=labels[c.status]||labels.off;
+  return `<div class="home"><div class="network">${icon(platform==='android'?'signal':'monitor')}<span>${platform==='android'?'Android':platform==='windows'?'Windows':'Предварительный просмотр'} · тестовый доступ</span></div>
+  <section class="connection-state" aria-live="polite"><h1>${title}</h1><p class="${connected?'good':c.status==='error'?'danger':''}">${sub}</p></section>
+  <div class="power-space"><button type="button" class="power" data-action="power" data-state="${c.status}" aria-label="${active()?'Отключить':'Подключить'}" ${pending||state.updates?.state==='installing'?'disabled':''}>${icon(busy()?'loader-circle':c.status==='error'?'rotate-cw':'power')}</button></div>
+  <div class="route-label">${c.route?`${escape(names[c.route.location])} · ${escape(c.route.protocol)}${connected&&Number.isFinite(c.latency)?' · '+c.latency+' мс':''}`:'Подключить'}</div>
+  <div class="choices">${choice('location','Локация')}${choice('protocol','Протокол')}</div>
+  ${!state.profiles.length?`<div class="access-empty"><p>Тестовый доступ не добавлен</p>${button('import','Импортировать доступ','upload','primary full')}</div>`:''}
+  ${c.error?`<div class="inline-error" role="alert">${escape(c.error)}</div>`:''}
+  ${connected&&platform==='windows'&&state.settings.mode==='isolated'?button('testPage','Открыть тестовую страницу','external-link','text-button full'):''}
+  ${button('details','Подробности соединения','activity','details full')}
+  </div>`;
+}
+const toggle=(key,label,value)=>`<label class="switch-row"><span>${label}</span><input type="checkbox" role="switch" data-setting="${key}" ${value?'checked':''}><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></label>`;
+function updates(){const current=state.updates?.state?state.updates:update;let text='Версия '+state.version;
+  if(current?.state==='checking'||updateBusy)text='Проверяем…';else if(current?.state==='unconfigured'||current?.state==='error')text=current.message||'Источник обновлений ещё не настроен';else if(current?.state==='current')text='Установлена актуальная версия';else if(current?.state==='available')text='Доступна версия '+current.version;else if(current?.state==='downloading')text='Загрузка · '+(current.percent||0)+'%';else if(current?.state==='ready')text='Версия '+current.version+' готова к установке';
+  if(current?.state==='installing')text='Ожидаем завершения установки';
+  const working=updateBusy||['checking','downloading','installing'].includes(current?.state);
+  return `<section class="updates"><div class="section-caption">Обновления · тестовый канал</div>${toggle('autoCheckUpdates','Проверять автоматически',state.settings.autoCheckUpdates!==false)}${toggle('autoDownloadUpdates','Скачивать автоматически',state.settings.autoDownloadUpdates===true)}${platform==='android'?toggle('updateWifiOnly','Загрузка только по Wi-Fi',state.settings.updateWifiOnly!==false):''}${button('updates','Проверить обновления','refresh-cw','secondary full',working?'disabled':'')}<p class="update-status" role="status">${escape(text)}</p>${current?.state==='downloading'?`<progress class="update-progress" max="100" value="${Number(current.percent)||0}" aria-label="Загрузка обновления"></progress>`:''}${current?.notes?`<p class="update-notes">${escape(current.notes)}</p>`:''}${current?.state==='available'?button('downloadUpdate','Скачать обновление','download','text-button'):''}${current?.state==='ready'?button('installUpdate',active()?'Сначала отключите VPN':'Установить обновление','refresh-cw','secondary full',active()?'disabled':''):''}</section>`;}
+function accountSettings(){const account=state.account||{state:'unconfigured'};const labels={unconfigured:'Вход ещё не настроен',signed_out:'Вход не выполнен',authorized:'Вход подтверждён',pending:'Ожидаем одобрения',expired:'Заявка истекла',rejected:'Заявка отклонена'};
+  return `<section class="account-settings"><div class="section-caption">Аккаунт</div><p class="update-status" role="status">${labels[account.state]||'Проверяем вход'}</p>${account.message?`<p class="update-status">${escape(account.message)}</p>`:''}${account.state==='pending'?`<p class="login-number">${escape(account.number)}</p>${button('accountPoll','Проверить одобрение','refresh-cw','secondary full')}`:account.state==='authorized'?`${button('accountProfiles','Получить подключения','download','choice',active()?'disabled':'')}${button('accountLogout','Выйти из аккаунта','user-round','text-button')}`:button('accountBegin','Войти через Telegram','message-circle','secondary full',account.state==='unconfigured'?'disabled':'')}</section>`;}
+function logging(){return platform!=='preview'?`<section><div class="section-caption">Диагностика</div><div class="setting-state"><span>Локальный журнал</span><span class="${state.diagnostics?.available?'good':'danger'}">${icon(state.diagnostics?.available?'check':'triangle-alert')}${state.diagnostics?.available?'Включён':'Ошибка записи'}</span></div>${button('markIssue','Отметить сбой','flag','choice')}${button('exportDiagnostics',exportBusy?'Сохраняем архив…':'Экспорт диагностики','download','choice',exportBusy?'disabled':'')}${platform==='windows'?button('openLogs','Открыть папку журналов','folder-open','choice'):''}</section>`:'';}
+function startupSettings(){return `<section class="startup-settings"><div class="section-caption">Запуск приложения</div>${[['startWithWindows','Запускать с Windows',Boolean(state.startup?.enabled),!state.startup?.available],['startInTray','Запускать в трее',state.settings.startInTray===true,false]].map(([key,label,checked,disabled])=>`<label class="switch-row"><span>${label}</span><input type="checkbox" role="switch" data-setting="${key}" ${checked?'checked':''} ${disabled?'disabled':''}><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></label>`).join('')}${state.startup?.otherVersion?'<p class="update-status">Автозапуск другой сборки</p>':''}</section>`;}
+function settings(){return `<div class="view"><h2>Настройки</h2><div class="section-caption">Внешний вид</div><div class="segment" role="group" aria-label="Тема">${[['system','monitor','Авто'],['light','sun','Светлая'],['dark','moon','Тёмная']].map(([value,glyph,label])=>button('theme',label,glyph,'',`data-value="${value}" aria-pressed="${state.settings.theme===value}"`)).join('')}</div>
+  ${platform==='windows'?startupSettings():''}
+  ${platform==='windows'?`<div class="section-caption">Режим подключения</div><div class="mode-options">${[['isolated','Тестовый','Без смены системных маршрутов'],['vpn','VPN','Весь трафик компьютера']].map(([value,label,sub])=>`<label class="mode-option"><input type="radio" name="mode" data-setting="mode" value="${value}" ${state.settings.mode===value?'checked':''} ${active()?'disabled':''}><span>${label}<small>${sub}</small></span></label>`).join('')}</div>`:''}
+  <div class="section-caption">Маршрутизация</div>${button('split','Раздельное туннелирование','route','choice',active()?'disabled':'')}<p class="update-status">${splitNames[state.settings.split?.mode||'all']}${platform==='windows'&&state.settings.mode!=='vpn'?' · Действует в VPN-режиме':''}</p>
+  ${accountSettings()}<div class="section-caption">Доступ</div>${button('import',`Тестовые подключения${state.profiles.length?' · '+state.profiles.length:''}`,'key-round','choice',active()?'disabled':'')}
+  <div class="setting-state"><span>Защищённый DNS</span><span class="good">${icon('lock-keyhole')}DoH</span></div>${platform==='android'?`<button type="button" class="choice" data-action="notificationSettings"><span class="choice-copy"><strong>Уведомления VPN</strong><small>${state.notificationsEnabled?'Разрешены':'Выключены'}</small></span>${icon('external-link')}</button>`:''}${logging()}${updates()}<div class="version">Zphone Test · ${state.version}</div></div>`;}
+function details(){const c=state.connection;return `<dl class="session">${[['Локация',c.route?names[c.route.location]:names[state.settings.location]],['Протокол',c.route?.protocol||names[state.settings.protocol]],['Выбор протокола',state.settings.protocol==='auto'?'Автоматический':'Ручной'],['Режим',platform==='android'?'VPN':state.settings.mode==='vpn'?'VPN':'Изолированный тест'],['Задержка',c.status==='connected'&&Number.isFinite(c.latency)?c.latency+' мс':'Не измерена'],['Локальный порт',c.port?String(c.port):'Не запущен'],['Доступы',state.profiles.length+' тестовых']].map(([key,value])=>`<div><dt>${key}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl>`;}
+function help(){return `<div class="view help-view"><h2>Помощь</h2><h3>Проверка подключения</h3><div class="help-actions">${button('diagnose','Проверить соединение','activity','primary full',diagnostic?.running?'disabled':'')}</div>${diagnostic?`<p class="diagnostic ${diagnostic.ok?'good':'danger'}" role="status">${diagnostic.running?'Проверяем…':diagnostic.ok?'Ответ получен · '+diagnostic.latency+' мс':escape(diagnostic.message)}</p>`:''}${button('details','Сведения о соединении','file-text','choice')}<button type="button" class="choice" data-action="openSupport"><span class="choice-icon">${icon('message-circle')}</span><span class="choice-copy"><strong>Поддержка</strong><small>Telegram</small></span>${icon('external-link')}</button>${logging()}${updates()}<div class="version">Zphone Test · ${state.version}</div></div>`;}
+function appRows(){
+  const query=appQuery.toLocaleLowerCase();
+  const selected=new Map(splitDraft.apps.map(app=>[app.id,app]));
+  const choices=[...new Map([...apps,...splitDraft.apps].map(app=>[app.id,app])).values()].filter(app=>(app.name+' '+app.id).toLocaleLowerCase().includes(query));
+  choices.sort((a,b)=>Number(selected.has(b.id))-Number(selected.has(a.id))||a.name.localeCompare(b.name));
+  return choices.map(app=>`<label class="app-row"><input type="checkbox" data-app="${escape(app.id)}" ${selected.has(app.id)?'checked':''}><span><strong>${escape(app.name)}</strong><small>${escape(app.id)}</small></span></label>`).join('')||`<p class="update-status">${appsBusy?'Загрузка приложений…':'Приложения не найдены'}</p>`;
+}
+function splitView(){return `<div class="view split-view"><div class="view-heading">${button('splitBack','','chevron-down','icon-button','aria-label="Назад к настройкам" title="Назад"')}<h2>Приложения</h2></div>
+  <div class="mode-options">${Object.entries(splitNames).map(([value,label])=>`<label class="mode-option"><input type="radio" name="split-mode" data-setting="splitMode" value="${value}" ${splitDraft.mode===value?'checked':''}><span>${label}</span></label>`).join('')}</div>
+  ${splitDraft.mode!=='all'?`<p class="split-status">${splitDraft.mode==='include'?'Остальные приложения работают без VPN':'Остальные приложения используют VPN'}</p><div class="app-toolbar"><input type="search" id="app-search" aria-label="Поиск приложений" placeholder="Поиск приложений" value="${escape(appQuery)}">${button('refreshApps','','refresh-cw','icon-button',`aria-label="Обновить список" title="Обновить список" ${appsBusy?'disabled':''}`)}${platform==='windows'?button('pickApp','','folder-open','icon-button','aria-label="Выбрать файл .exe" title="Выбрать файл .exe"'):''}</div><div class="split-count">Выбрано: ${splitDraft.apps.length}</div><div class="app-results">${appRows()}</div>`:''}
+  ${button('saveSplit','Сохранить','check','primary full split-save',appsBusy?'disabled':'')}</div>`;}
+async function loadApps(){appsBusy=true;render();try{const result=await request('listApps');apps=result.apps;}catch(error){message=error.message;}finally{appsBusy=false;render();}}
+function modal(){if(!overlay)return '';let title,content;
+  if(['location','protocol'].includes(overlay)){
+    title=overlay==='location'?'Локация':'Протокол';
+    const values=overlay==='location'?['auto',...new Set(state.profiles.map(p=>p.location))]:['auto',...PROTOCOLS];
+    const missing=overlay==='protocol'&&PROTOCOLS.some(protocol=>!state.profiles.some(p=>p.protocol===protocol));
+    content=`<div class="option-list" role="group" aria-label="${title}">${values.map(value=>{
+      const unavailable=overlay==='protocol'&&value!=='auto'&&!state.profiles.some(p=>p.protocol===value);
+      const subtitle=unavailable?'Доступ не импортирован':value==='auto'?'Проверка доступных тестовых подключений':overlay==='protocol'?'Ручной выбор':'Тестовая локация';
+      return `<button type="button" class="option" data-action="select" data-kind="${overlay}" data-value="${value}" aria-pressed="${state.settings[overlay]===value}" ${unavailable?'disabled':''}>${overlay==='location'?flag(value):icon(value==='auto'?'sparkles':'shield-check')}<span><strong>${names[value]}</strong><small>${subtitle}</small></span>${state.settings[overlay]===value?icon('check'):''}</button>`;
+    }).join('')}</div>${missing?button('import','Импортировать доступы','upload','text-button full'):''}`;
+  }
+  else if(overlay==='switch'){title='Сменить подключение?';content=`<p class="modal-copy">Тестовое соединение будет отключено. Текущие подключения других приложений не изменятся.</p>${button('confirmSwitch','Отключить тестовое соединение','power','primary full')}`;}
+  else{title='Соединение';content=details();}
+  return `<div class="overlay"><section class="sheet" role="dialog" aria-modal="true" aria-label="${title}"><div class="sheet-head"><h2>${title}</h2><button type="button" class="icon-button" data-action="closeModal" aria-label="Закрыть">${icon('x')}</button></div>${content}</section></div>`;
+}
+function render(){
+  const nextMotion={view,overlay,message,status:state.connection.status,theme:state.settings.theme==='system'?(themeMedia.matches?'dark':'light'):state.settings.theme,startWithWindows:Boolean(state.startup?.enabled),startInTray:state.settings.startInTray===true};
+  const captured=motion.before(nextMotion);
+  const focused=document.activeElement;
+  const focusAttributes=focused&&root.contains(focused)?['data-action','data-setting','data-value','data-kind','name','value','id'].filter(key=>focused.hasAttribute(key)).map(key=>`[${key}="${CSS.escape(focused.getAttribute(key))}"]`).join(''):'';
+  const focusSelector=focusAttributes?(focused.closest('.bottom-nav')?'.bottom-nav ':focused.closest('.side-nav')?'.side-nav ':'')+focusAttributes:'';
+  root.dataset.platform=platform;
+  root.dataset.layout=platform==='android'||platform==='preview'&&mobileMedia.matches?'mobile':'desktop';
+  const theme=nextMotion.theme;
+  document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme;
+  if(!root.querySelector('.shell'))root.innerHTML=`<div class="shell"><aside class="sidebar">${wordmark()}<div data-region="side-nav"></div><div class="side-foot" data-region="side-foot"></div></aside><div class="main"><header class="mobile-header">${wordmark()}<span class="test-label">TEST</span></header><main data-region="content"></main><div data-region="bottom-nav"></div><footer data-region="footer"></footer></div></div><div data-region="modal"></div><div data-region="notice"></div>`;
+  const region=(name,html)=>{const element=root.querySelector(`[data-region="${name}"]`);if(regions.get(element)!==html){element.innerHTML=html;regions.set(element,html);}};
+  root.querySelector('.shell').inert=Boolean(overlay);
+  region('side-nav',navigation(true));region('bottom-nav',navigation());
+  region('side-foot',`<strong>Тестовая сборка</strong><span>${state.profiles.length?'Доступы: '+state.profiles.length:'Нет доступа'}</span>`);
+  region('content',view==='home'?home():view==='settings'?settings():view==='split'?splitView():help());
+  region('footer',`<span>${icon('shield-check')}Отдельные тестовые доступы</span><span title="${escape(state.build||'')}">${state.version}</span>`);
+  region('modal',modal());
+  region('notice',message?`<div class="notice" role="alert"><span>${escape(message)}</span><button class="icon-button" type="button" data-action="dismiss" aria-label="Закрыть сообщение">${icon('x')}</button></div>`:'');
+  createIcons({icons,root,attrs:{'stroke-width':1.7,width:20,height:20}});
+  for(const input of root.querySelectorAll('.startup-settings input'))input.disabled=startupBusy||input.dataset.setting==='startWithWindows'&&!state.startup?.available;
+  if(focusSelector&&!focused.isConnected)root.querySelector(focusSelector)?.focus({preventScroll:true});
+  motion.after(nextMotion,captured);
+}
+async function call(command,data){try{const result=await request(command,data);if(result?.connection)state=result;return result;}catch(error){message=error.message;return null;}finally{render();}}
+let nextPicker='protocol',waitingPicker=false;
+root.addEventListener('click',async event=>{
+  const control=event.target.closest('button[data-action]');if(!control||control.disabled)return;
+  const action=control.dataset.action,value=control.dataset.value;
+  if(action==='nav'){view=value;message='';render();window.scrollTo(0,0);return;}
+  if(action==='dismiss'){message='';render();return;}
+  if(action==='closeModal'){overlay=null;render();return;}
+  if(action==='details'){overlay='details';render();root.querySelector('[data-action="closeModal"]')?.focus();return;}
+  if(action==='picker'){nextPicker=value;overlay=active()?'switch':value;render();root.querySelector('[data-action="closeModal"]')?.focus();return;}
+  if(action==='confirmSwitch'){overlay=null;waitingPicker=true;await call('disconnect');if(!active()){waitingPicker=false;overlay=nextPicker;}render();return;}
+  if(action==='select'){overlay=null;await call('settings',{[control.dataset.kind]:value});return;}
+  if(action==='theme'){await call('settings',{theme:value});return;}
+  if(action==='split'){splitDraft=structuredClone(state.settings.split||{mode:'all',apps:[]});appQuery='';view='split';await loadApps();return;}
+  if(action==='splitBack'){view='settings';render();return;}
+  if(action==='refreshApps'){await loadApps();return;}
+  if(action==='pickApp'){try{const result=await request('pickApp');if(result.app){apps.push(result.app);if(!splitDraft.apps.some(app=>app.id.toLowerCase()===result.app.id.toLowerCase()))splitDraft.apps.push(result.app);}}catch(error){message=error.message;}render();return;}
+  if(action==='saveSplit'){
+    if(splitDraft.mode==='include'&&!splitDraft.apps.length){message='Выберите хотя бы одно приложение для VPN.';render();return;}
+    if(await call('settings',{split:splitDraft})){view='settings';render();}return;
+  }
+  if(action==='power'){
+    if(!active()&&!state.profiles.length){await call('import');return;}
+    pending=true;render();await call(active()?'disconnect':'connect');pending=false;render();return;
+  }
+  if(action==='updates'){updateBusy=true;render();try{update=await request('checkUpdates');}catch(error){update={state:'error',message:error.message};}state.updates=update;updateBusy=false;render();return;}
+  if(['downloadUpdate','installUpdate'].includes(action)){const result=await call(action);if(result?.state){state.updates=result;render();}return;}
+  if(['accountBegin','accountPoll','accountProfiles','accountLogout'].includes(action)){await call(action);return;}
+  if(action==='diagnose'){diagnostic={running:true};render();diagnostic=await call('diagnose')||{ok:false,message:'Проверка не завершилась.'};render();return;}
+  if(action==='markIssue'){const result=await call(action);if(result)message=result.ok?'Отметка сбоя сохранена':'Не удалось записать отметку';render();return;}
+  if(action==='exportDiagnostics'){exportBusy=true;render();try{const result=await request(action);if(result.ok)message='Архив диагностики сохранён';}catch(error){message=error.message;}finally{exportBusy=false;render();}return;}
+  if(['import','testPage','openLogs','openSupport','notificationSettings'].includes(action))await call(action);
+});
+root.addEventListener('change',async event=>{
+  const target=event.target;
+  if(['autoCheckUpdates','autoDownloadUpdates','updateWifiOnly'].includes(target.dataset.setting)){target.disabled=true;await call('settings',{[target.dataset.setting]:target.checked});return;}
+  if(['startWithWindows','startInTray'].includes(target.dataset.setting)){
+    const key=target.dataset.setting,value=target.checked;startupBusy=true;render();
+    try{await call('settings',{[key]:value});}finally{startupBusy=false;render();}return;
+  }
+  if(target.dataset.setting==='mode')call('settings',{mode:target.value});
+  if(target.dataset.setting==='splitMode'){splitDraft.mode=target.value;render();}
+  if(target.dataset.app){
+    const id=target.dataset.app,app=[...apps,...splitDraft.apps].find(item=>item.id===id);
+    splitDraft.apps=splitDraft.apps.filter(item=>item.id!==id);if(target.checked&&app)splitDraft.apps.push(app);
+    root.querySelector('.split-count').textContent='Выбрано: '+splitDraft.apps.length;
+  }
+});
+root.addEventListener('input',event=>{if(event.target.id==='app-search'){appQuery=event.target.value;root.querySelector('.app-results').innerHTML=appRows();}});
+root.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&overlay){overlay=null;render();}
+  if(event.key==='Tab'&&overlay){const items=[...root.querySelectorAll('.sheet button:not(:disabled)')],first=items[0],last=items.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}
+});
+subscribe(value=>{state=value;if(waitingPicker&&!active()){waitingPicker=false;overlay=nextPicker;}render();});
+themeMedia.addEventListener('change',()=>{if(state.settings.theme==='system')render();});
+mobileMedia.addEventListener('change',()=>{if(platform==='preview')render();});
+render();
+call('snapshot');
