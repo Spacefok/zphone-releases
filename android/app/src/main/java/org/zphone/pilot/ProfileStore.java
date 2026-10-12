@@ -46,7 +46,7 @@ final class ProfileStore {
         for(int i=0;i<input.length();i++){
             JSONObject p=input.getJSONObject(i);String id=p.optString("id"),location=p.optString("location"),protocol=p.optString("protocol"),server=p.optString("server"),username=p.optString("username"),password=p.optString("password");
             int port=p.optInt("port",0);
-            if(!id.matches("[a-zA-Z0-9_-]{1,60}")||!ids.add(id)||!(location.equals("FIN")||location.equals("AMS")))throw new Exception("Некорректный тестовый доступ.");
+            if(!id.matches("[a-zA-Z0-9_-]{1,60}")||!ids.add(id)||!(location.equals("FIN")||location.equals("AMS")||location.equals("DEU")))throw new Exception("Некорректный тестовый доступ.");
             JSONObject clean=Protocols.validate(p);
             output.put(clean);
         }

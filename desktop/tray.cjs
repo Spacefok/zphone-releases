@@ -11,7 +11,7 @@ function createTray({Tray,Menu,nativeImage,window,iconPath,getState,isQuitting,d
     const title=[labels[status]||labels.off,route].filter(Boolean).join(' · ');
     const key=title+stopping;if(key===lastMenu)return;lastMenu=key;
     const canStop=['connecting','checking','recovering','connected'].includes(status)&&!stopping;
-    tray.setToolTip('Zphone Test · '+title);
+    tray.setToolTip('Zphone Preview · '+title);
     tray.setContextMenu(Menu.buildFromTemplate([
       {id:'status',label:title,enabled:false},{type:'separator'},
       {id:'open',label:'Открыть Zphone',click:show},

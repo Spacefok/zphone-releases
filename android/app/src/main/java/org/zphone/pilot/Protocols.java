@@ -39,6 +39,7 @@ final class Protocols {
         if(protocol.equals("NaiveProxy"))check(ipv4(p.getString("server"))&&p.has("sni")&&!p.has("fingerprint"));
         if(p.has("clientRandomPrefix")){check(protocol.equals("TrustTunnel")&&p.getString("clientRandomPrefix").matches("(?:[a-fA-F0-9]{2}){1,16}"));out.put("clientRandomPrefix",p.getString("clientRandomPrefix").toLowerCase(java.util.Locale.ROOT));}
         if(p.has("obfsPassword")){String v=p.getString("obfsPassword");check(protocol.equals("Hysteria2")&&v.length()>=8&&v.length()<=128);out.put("obfsPassword",v);}
+        if(p.has("obfsType")){String v=p.getString("obfsType");check(protocol.equals("Hysteria2")&&p.has("obfsPassword")&&(v.equals("salamander")||v.equals("gecko")));out.put("obfsType",v);}
         return out;
     }
     static JSONObject proxy(JSONObject p,int naivePort) throws Exception {
@@ -50,7 +51,7 @@ final class Protocols {
         out.put("type",protocol.equals("Hysteria2")?"hysteria2":"trusttunnel").put("sni",p.optString("sni",p.getString("server"))).put("skip-cert-verify",p.has("fingerprint"));
         if(p.has("fingerprint"))out.put("fingerprint",p.getString("fingerprint"));
         if(protocol.equals("TrustTunnel")){out.put("quic",false);if(p.has("clientRandomPrefix"))out.put("client-random-prefix",p.getString("clientRandomPrefix"));}
-        if(protocol.equals("Hysteria2")&&p.has("obfsPassword"))out.put("obfs","salamander").put("obfs-password",p.getString("obfsPassword"));
+        if(protocol.equals("Hysteria2")&&p.has("obfsPassword"))out.put("obfs",p.optString("obfsType","salamander")).put("obfs-password",p.getString("obfsPassword"));
         return out;
     }
     private static String quote(String v) throws Exception {return URLEncoder.encode(v,"UTF-8").replace("+","%20");}

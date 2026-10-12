@@ -41,3 +41,8 @@ test('TLS random prefixes are bounded, preserved and never exposed in UI',()=>{
 test('version comparison handles numeric components and invalid releases',()=>{
   assert.equal(compareVersion('0.10.0','0.2.0'),1);assert.equal(compareVersion('0.1.0','0.1.0'),0);assert.equal(compareVersion('0.0.9','0.1.0'),-1);assert.throws(()=>compareVersion('v1.2.3','0.1.0'));
 });
+test('Germany is independently selectable without changing existing locations',()=>{
+  const checked=validateBundle(bundle([{...profile,id:'deu-test',location:'DEU'},profile]));
+  assert.deepEqual(candidates(checked.profiles,'DEU','auto').map(p=>p.id),['deu-test']);
+  assert.deepEqual(candidates(checked.profiles,'FIN','auto').map(p=>p.id),['test-fin']);
+});

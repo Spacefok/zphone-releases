@@ -16,7 +16,7 @@ for(const [url,sha,type] of assets) {
   const full=path.join(root,dest);await fs.mkdir(path.dirname(full),{recursive:true});await fs.writeFile(full,output);
   console.log(`Verified ${type}`);
 }
-for(const [name,code] of [['fin','1f1eb-1f1ee'],['ams','1f1f3-1f1f1']]){
+for(const [name,code] of [['fin','1f1eb-1f1ee'],['ams','1f1f3-1f1f1'],['deu','1f1e9-1f1ea']]){
   const dir=path.join(root,'public');await fs.mkdir(dir,{recursive:true});
   const response=await fetch(`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${code}.png`);if(!response.ok)throw Error('Flag resource unavailable');await fs.writeFile(path.join(dir,`${name}.png`),Buffer.from(await response.arrayBuffer()));
 }

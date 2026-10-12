@@ -92,7 +92,7 @@ public class TunnelService extends VpnService {
         String total="↑ "+TunnelTraffic.bytes(totals.uploaded)+"   ↓ "+TunnelTraffic.bytes(totals.downloaded);
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_ACTIVITY_CLEAR_TOP),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
         PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,TunnelService.class).setAction(ACTION_STOP),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
-        Notification.Builder builder=new Notification.Builder(this,"vpn").setSmallIcon(android.R.drawable.ic_lock_lock).setContentTitle(notificationRoute.isEmpty()?"Zphone Test":notificationRoute)
+        Notification.Builder builder=new Notification.Builder(this,"vpn").setSmallIcon(android.R.drawable.ic_lock_lock).setContentTitle(notificationRoute.isEmpty()?"Zphone Preview":notificationRoute)
             .setContentText(connected?rates:label).setSubText(total).setStyle(new Notification.BigTextStyle().bigText(label+"\n"+(connected?rates+"\n":"")+"Всего: "+total))
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setCategory(Notification.CATEGORY_SERVICE).setVisibility(Notification.VISIBILITY_PRIVATE)
             .addAction(new Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel,"Отключить",stop).build());
@@ -204,7 +204,7 @@ public class TunnelService extends VpnService {
     }
     private int health() throws Exception {return api("/proxies/Zphone-Test/delay?timeout=8000&url="+URLEncoder.encode("https://www.gstatic.com/generate_204","UTF-8"),10000).getInt("delay");}
     private void startTunnel() throws Exception {
-        Builder builder=new Builder().setSession("Zphone Test").setMtu(1400).addAddress("198.18.0.1",30).addAddress("fd86:ea04:1111::1",126).addRoute("0.0.0.0",0).addRoute("::",0).addDnsServer("1.1.1.1");
+        Builder builder=new Builder().setSession("Zphone Preview").setMtu(1400).addAddress("198.18.0.1",30).addAddress("fd86:ea04:1111::1",126).addRoute("0.0.0.0",0).addRoute("::",0).addDnsServer("1.1.1.1");
         SplitTunnel.apply(this,builder);builder.setBlocking(false);tunnel=builder.establish();if(tunnel==null)throw new Exception("VPN permission revoked");
         String config="tunnel:\n  mtu: 1400\n  ipv4: 198.18.0.1\n  ipv6: 'fd86:ea04:1111::1'\nsocks5:\n  address: 127.0.0.1\n  port: "+port+"\n  udp: udp\nmisc:\n  log-level: error\n  log-file: /dev/null\n";
         tunnelFile=new File(getFilesDir(),"session/tunnel.yml");Files.write(tunnelFile.toPath(),config.getBytes(StandardCharsets.UTF_8));

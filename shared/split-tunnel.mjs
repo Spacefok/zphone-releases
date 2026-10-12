@@ -4,7 +4,7 @@ export function validateSplit(value={mode:'all',apps:[]},platform='windows') {
   for(const item of value.apps){
     if(!item||typeof item.id!=='string'||typeof item.name!=='string'||!item.name.length||item.name.length>150)throw Error('Некорректное приложение.');
     const id=item.id;
-    const valid=platform==='android'?/^[A-Za-z][\w]*(?:\.[\w]+)+$/.test(id)&&id!=='org.zphone.pilot':/^[A-Za-z]:\\.+\.exe$/i.test(id)&&id.length<=1024&&!/[\x00-\x1f,<>"|?*]/.test(id)&&!/(?:^|\\)\.\.(?:\\|$)/.test(id);
+    const valid=platform==='android'?/^[A-Za-z][\w]*(?:\.[\w]+)+$/.test(id)&&!['org.zphone.pilot','org.zphone.preview'].includes(id):/^[A-Za-z]:\\.+\.exe$/i.test(id)&&id.length<=1024&&!/[\x00-\x1f,<>"|?*]/.test(id)&&!/(?:^|\\)\.\.(?:\\|$)/.test(id);
     if(!valid)throw Error('Нужен полный путь к .exe или допустимое имя пакета.');
     const key=platform==='windows'?id.toLowerCase():id;
     if(!seen.has(key)){seen.add(key);apps.push({id,name:item.name});}

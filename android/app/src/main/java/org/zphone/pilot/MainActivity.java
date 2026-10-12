@@ -114,7 +114,7 @@ public class MainActivity extends Activity {
                             for(String key:new String[]{"autoCheckUpdates","autoDownloadUpdates","updateWifiOnly"})if(arg.has(key)){if(!(arg.get(key) instanceof Boolean))throw new Exception("Некорректная настройка.");editor.putBoolean(key,arg.getBoolean(key));}
                             if(arg.has("split"))editor.putString("split",SplitTunnel.validate(arg.getJSONObject("split")).toString());
                             for(String key:new String[]{"location","protocol","theme"})if(arg.has(key)){
-                                String value=arg.getString(key);boolean valid=key.equals("location")?value.matches("auto|FIN|AMS"):key.equals("protocol")?(value.equals("auto")||Protocols.ALL.contains(value)):value.matches("system|light|dark");
+                                String value=arg.getString(key);boolean valid=key.equals("location")?value.matches("auto|FIN|AMS|DEU"):key.equals("protocol")?(value.equals("auto")||Protocols.ALL.contains(value)):value.matches("system|light|dark");
                                 if(!valid)throw new Exception("Некорректные настройки.");editor.putString(key,value);
                             }
                             editor.apply();UpdateJob.schedule(MainActivity.this);Diagnostics.get(MainActivity.this).write("settings.changed",settings());result=snapshot();break;

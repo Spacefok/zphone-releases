@@ -15,7 +15,7 @@ final class SplitTunnel {
         if(!mode.matches("all|exclude|include")||apps.length()>200)throw new Exception("Некорректные настройки приложений.");
         for(int i=0;i<apps.length();i++){
             JSONObject app=apps.getJSONObject(i);String id=app.getString("id"),name=app.getString("name");
-            if(!id.matches("[A-Za-z][\\w]*(?:\\.[\\w]+)+")||id.equals("org.zphone.pilot")||name.isEmpty()||name.length()>150)throw new Exception("Некорректное приложение.");
+            if(!id.matches("[A-Za-z][\\w]*(?:\\.[\\w]+)+")||id.equals("org.zphone.pilot")||id.equals("org.zphone.preview")||name.isEmpty()||name.length()>150)throw new Exception("Некорректное приложение.");
             if(seen.add(id))out.put(new JSONObject().put("id",id).put("name",name));
         }
         return new JSONObject().put("mode",mode).put("apps",out);

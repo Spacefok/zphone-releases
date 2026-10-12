@@ -3,7 +3,7 @@
   "channel": "test",
   "publicKey": "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAvgygjFLU7LuWN9NHPeNr\nTU0RsWvkQWF+jhPAwO2vTcMQMGyLGXpYPDe2ao7qWcKobIyQUTONlGQxdNNbaVTS\nZUXY3lX8s26Mvr0z6Bfh0L0rYKhbXrLAz/GqESuf37jaSbi6Vy8/1It6uYiDTff+\njteFeYJzOmz94G9lTzVMf/R0vYAsa0sevCreXcqMZA8EFGEFT7eNfHoE82dNvx1f\nvb33y4MxPuztws7fM9KW4koFxBsSW+gmNm18YUUqoiIcge3J1sfSTL4D5Rkv+q40\nCVjFrduxhY4746jRizt8N1ZJQvGg8P1I4vTtSh3abT/tt6zB+0GRF3Y16APS0K9H\n793Cqzn7vlA8+PlLpGcKpp+m6oE3hlyWfeJSoobm+nJjSmvPuE4Se/4E9DWm69Sr\nFmxuU7O8HwZhox07vLdcvS/rKlfbN9GXS8XCVn9a2HF5IXB8shF+dRxZCQJMkUZk\nwcApctq5JopK/oddeyX1N1XtDn6ORri4LiO+gnffkzg9AgMBAAE=\n-----END PUBLIC KEY-----\n",
   "auth": {
-    "baseUrl": null,
-    "botUsername": "Zteganon_bot"
+    "baseUrl": "https://r1275324.s2576.vm.mydomain.zone",
+    "botUsername": "Zphone_test_bot"
   }
 }

@@ -11,7 +11,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 final class Diagnostics {
-    static final String VERSION="0.3.5",BUILD="android-20261012.9";
+    static final String VERSION="0.3.6",BUILD="android-20261012.10";
     private static Diagnostics instance;
     private final File directory;
     private final String session=UUID.randomUUID().toString();

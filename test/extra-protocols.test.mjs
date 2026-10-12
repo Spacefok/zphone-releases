@@ -18,6 +18,14 @@ test('Hysteria2 uses authenticated QUIC and verified TLS',()=>{
   const p=validate(hy),proxy=config(p).proxies[0];assert.equal(proxy.type,'hysteria2');assert.equal(proxy.obfs,'salamander');assert.equal(proxy['skip-cert-verify'],false);assert.equal(proxy['obfs-password'],hy.obfsPassword);
   assert.throws(()=>validate({...hy,obfsPassword:'x'}));
 });
+
+test('Hysteria2 accepts explicit Gecko without changing existing Salamander profiles',()=>{
+  assert.equal(config(validate({...hy,obfsType:'gecko'})).proxies[0].obfs,'gecko');
+  assert.equal(config(validate(hy)).proxies[0].obfs,'salamander');
+  assert.throws(()=>validate({...hy,obfsType:'unknown'}));
+  assert.throws(()=>validate({...hy,obfsType:'gecko',obfsPassword:undefined}));
+  assert.throws(()=>validate({...naive,obfsType:'gecko'}));
+});
 test('NaiveProxy uses only its local helper, excludes only the endpoint and rejects UDP',()=>{
   const p=validate(naive),c=config(p);assert.equal(c.proxies[0].type,'socks5');assert.equal(c.proxies[0].udp,false);assert.equal(c.proxies[0].password,undefined);
   assert.deepEqual(c.tun['route-exclude-address'],[base.server+'/32']);assert.deepEqual(c.rules,['NETWORK,udp,REJECT','MATCH,Zphone-Test']);

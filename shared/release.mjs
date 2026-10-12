@@ -17,7 +17,7 @@ export function verifyRelease(envelope,{publicKey,repository,channel='test',now=
   const asset=release.assets?.[platform];
   if(!asset||!Number.isSafeInteger(asset.bytes)||asset.bytes<1||asset.bytes>1024*1024*1024||!/^[a-f0-9]{64}$/.test(asset.sha256)||!/^[A-Za-z0-9+/]{86}==$/.test(asset.sha512))throw Error('Invalid release artifact');
   releaseAssetUrl(asset.url,repository);
-  if(platform==='android-arm64'&&(!Number.isSafeInteger(asset.versionCode)||asset.versionCode<1||asset.package!=='org.zphone.pilot'))throw Error('Invalid Android release');
+  if(platform==='android-arm64'&&(!Number.isSafeInteger(asset.versionCode)||asset.versionCode<1||asset.package!=='org.zphone.preview'))throw Error('Invalid Android release');
   return {...release,asset};
 }
 export function verifyArtifact(bytes,asset){

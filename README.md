@@ -1,7 +1,11 @@
-# Zphone Test
+# Zphone Preview
 
 Test VPN client for Windows x64 and Android arm64. Access requires an approved
 private profile; downloading this application does not grant VPN access.
+
+Preview is installed separately from existing clients, with its own local
+storage, Android package and Windows startup entry. Current private connections
+are not migrated or deleted automatically. See [test instructions](TESTING.md).
 
 ## Features
 
@@ -31,11 +35,11 @@ npm test
 npm run build
 npm run package:installer
 npm run sync:android
-.\scripts\build-android.ps1
+.\scripts\build-preview-android.ps1
 ```
 
-The Android command above builds a debug APK for local tests. Public Android
-releases need a dedicated signing key and `assembleRelease`. An existing APK
+The Android command above builds a release APK using a dedicated Preview key
+kept outside the source tree. An existing APK
 with a different signing certificate cannot be replaced without a planned
 migration. Never uninstall an existing client without backing up its access.
 

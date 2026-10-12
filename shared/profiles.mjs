@@ -1,5 +1,5 @@
 import {validateSplit,splitRules} from './split-tunnel.mjs';
-export const VERSION='0.3.5';
+export const VERSION='0.3.6';
 export const PROTOCOLS=['TrustTunnel','Mieru','NaiveProxy','AmneziaWG','Hysteria2'];
 const host=/^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
 const str=(v,min,max)=>typeof v==='string'&&v.length>=min&&v.length<=max;
@@ -24,7 +24,7 @@ export function validateBundle(value) {
   const profiles=value.profiles.map(p=>{
     if(!p||!str(p.id,1,60)||!/^[a-zA-Z0-9_-]+$/.test(p.id)||seen.has(p.id))throw Error('Некорректный или повторяющийся идентификатор.');
     seen.add(p.id);
-    if(!['FIN','AMS'].includes(p.location)||!PROTOCOLS.includes(p.protocol))throw Error('Неподдерживаемая локация или протокол.');
+    if(!['FIN','AMS','DEU'].includes(p.location)||!PROTOCOLS.includes(p.protocol))throw Error('Неподдерживаемая локация или протокол.');
     if(!str(p.server,1,253)||!host.test(p.server)||!Number.isInteger(p.port)||p.port<1||p.port>65535)throw Error('Некорректный адрес подключения.');
     if(p.protocol==='AmneziaWG'){
       if(!ipv4(p.ip)||!key(p.privateKey)||!key(p.publicKey)||!key(p.presharedKey)||!Number.isInteger(p.mtu)||p.mtu<576||p.mtu>1400)throw Error('Некорректный ключ или адрес AWG.');
@@ -33,10 +33,11 @@ export function validateBundle(value) {
     if(!str(p.password,1,512)||(p.protocol!=='Hysteria2'&&!str(p.username,1,128)))throw Error('В доступе отсутствуют учётные данные.');
     if(p.protocol==='NaiveProxy'&&(!ipv4(p.server)||!str(p.sni,1,253)||p.fingerprint!==undefined))throw Error('NaiveProxy требует IPv4 узла и DNS-имя с доверенным сертификатом.');
     if(p.obfsPassword!==undefined&&(p.protocol!=='Hysteria2'||!str(p.obfsPassword,8,128)))throw Error('Некорректный параметр Hysteria.');
+    if(p.obfsType!==undefined&&(p.protocol!=='Hysteria2'||!p.obfsPassword||!['salamander','gecko'].includes(p.obfsType)))throw Error('Некорректный тип маскировки Hysteria.');
     if(p.sni!==undefined&&(!str(p.sni,1,253)||!host.test(p.sni)))throw Error('Некорректный SNI.');
     if(p.fingerprint!==undefined&&!/^[a-fA-F0-9]{64}$/.test(p.fingerprint))throw Error('Некорректный отпечаток сертификата.');
     if(p.clientRandomPrefix!==undefined&&(!/^(?:[a-fA-F0-9]{2}){1,16}$/.test(p.clientRandomPrefix)||p.protocol!=='TrustTunnel'))throw Error('Некорректный TLS-префикс.');
-    return {id:p.id,location:p.location,protocol:p.protocol,server:p.server,port:p.port,...(p.protocol!=='Hysteria2'?{username:p.username}:{}),password:p.password,...(p.sni?{sni:p.sni}:{}),...(p.fingerprint?{fingerprint:p.fingerprint.toLowerCase()}: {}),...(p.clientRandomPrefix?{clientRandomPrefix:p.clientRandomPrefix.toLowerCase()}: {}),...(p.obfsPassword?{obfsPassword:p.obfsPassword}:{})};
+    return {id:p.id,location:p.location,protocol:p.protocol,server:p.server,port:p.port,...(p.protocol!=='Hysteria2'?{username:p.username}:{}),password:p.password,...(p.sni?{sni:p.sni}:{}),...(p.fingerprint?{fingerprint:p.fingerprint.toLowerCase()}: {}),...(p.clientRandomPrefix?{clientRandomPrefix:p.clientRandomPrefix.toLowerCase()}: {}),...(p.obfsPassword?{obfsPassword:p.obfsPassword}:{}),...(p.obfsType?{obfsType:p.obfsType}:{})};
   });
   return {format:'zphone-test-v1',scope:'test',profiles};
 }
@@ -44,7 +45,7 @@ export function publicProfiles(bundle) {
   return (bundle?.profiles||[]).map(({id,location,protocol})=>({id,location,protocol}));
 }
 export function candidates(profiles,location='auto',protocol='auto') {
-  if(!['auto','FIN','AMS'].includes(location)||!['auto',...PROTOCOLS].includes(protocol))throw Error('Некорректный выбор подключения.');
+  if(!['auto','FIN','AMS','DEU'].includes(location)||!['auto',...PROTOCOLS].includes(protocol))throw Error('Некорректный выбор подключения.');
   return profiles.filter(p=>(location==='auto'||p.location===location)&&(protocol==='auto'||p.protocol===protocol)).sort((a,b)=>PROTOCOLS.indexOf(a.protocol)-PROTOCOLS.indexOf(b.protocol)||a.location.localeCompare(b.location));
 }
 export function naiveConfig(profile,port){
@@ -63,7 +64,7 @@ export function coreConfig(profile,{port,apiPort,secret,mode='isolated',naivePor
   }else{
     Object.assign(proxy,{type:profile.protocol==='Hysteria2'?'hysteria2':'trusttunnel',sni:profile.sni||profile.server,'skip-cert-verify':Boolean(profile.fingerprint),...(profile.fingerprint?{fingerprint:profile.fingerprint}:{})});
     if(profile.protocol==='TrustTunnel')proxy.quic=false;
-    if(profile.protocol==='Hysteria2'&&profile.obfsPassword)Object.assign(proxy,{obfs:'salamander','obfs-password':profile.obfsPassword});
+    if(profile.protocol==='Hysteria2'&&profile.obfsPassword)Object.assign(proxy,{obfs:profile.obfsType||'salamander','obfs-password':profile.obfsPassword});
   }
   if(profile.protocol==='TrustTunnel'&&profile.clientRandomPrefix)proxy['client-random-prefix']=profile.clientRandomPrefix;
   split=validateSplit(split);
