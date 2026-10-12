@@ -49,3 +49,27 @@ test('network errors expose bounded codes, not opaque low-level URLs',()=>{
   assert.match(accountError({cause:{code:'ENOTFOUND'}}).message,/DNS/);
   assert.match(accountError({name:'TimeoutError'}).message,/вовремя/);
 });
+
+test('DOM timeout codes remain readable through abort wrappers',()=>{
+  const timeout=new DOMException('private endpoint','TimeoutError');
+  assert.equal(timeout.code,23);
+  assert.equal(networkCode(timeout),'ETIMEDOUT');
+  assert.equal(networkCode(Object.assign(Error('aborted'),{code:'ABORT_ERR',cause:timeout})),'ETIMEDOUT');
+  assert.match(accountError(timeout).message,/вовремя/);
+  const cycle={code:'ECONNRESET'};cycle.cause=cycle;
+  assert.equal(networkCode(cycle),'ECONNRESET');
+  assert.equal(networkCode({code:23}),'NETWORK_ERROR');
+});
+
+test('secure DNS diagnostics distinguish resolution from a request timeout',async()=>{
+  for(const failurePhase of ['resolve','request']){
+    const events=[],timeout=()=>{throw new DOMException('private value','TimeoutError');};
+    const transport=createAccountTransport({fetcher:timeout,
+      resolveHost:failurePhase==='resolve'?timeout:async()=> '1.2.3.4',postResolved:timeout,
+      logger:{write:(event,data)=>events.push({event,data})}});
+    await assert.rejects(transport(url,{secret:'private-token'}),error=>error.code==='ETIMEDOUT');
+    assert.equal(events.at(-1).data.phase,failurePhase);
+    assert.equal(events.at(-1).data.code,'ETIMEDOUT');
+    assert(!JSON.stringify(events).includes('private'));
+  }
+});

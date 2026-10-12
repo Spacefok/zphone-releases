@@ -1,11 +1,17 @@
 import {createAccountTransport} from './account-http.mjs';
+import {accessEndpoints,canRetryAccess} from '../shared/account-policy.mjs';
 export class Account {
   constructor({config,readToken,writeToken,transport=createAccountTransport()}){Object.assign(this,{config,readToken,writeToken,transport});this.pending=null;this.state={state:config?.baseUrl?'signed_out':'unconfigured'};}
   snapshot(){return {...this.state};}
   async call(route,data={},token){
-    const base=new URL(this.config.baseUrl);
-    if(base.protocol!=='https:'||base.username||base.password||base.search||base.hash)throw Error('Invalid access service');
-    return this.transport(new URL(route,base),data,token);
+    const endpoints=accessEndpoints(this.config);
+    if(this.preferred)endpoints.sort((a,b)=>Number(b===this.preferred)-Number(a===this.preferred));
+    for(let index=0;index<endpoints.length;index++){
+      try{
+        const value=await this.transport(new URL(route,endpoints[index]),data,token);
+        this.preferred=endpoints[index];return value;
+      }catch(error){if(index===endpoints.length-1||!canRetryAccess(route,error))throw error;}
+    }
   }
   async restore(){if(!this.config?.baseUrl)return;this.token=await this.readToken();if(this.token)this.state={state:'authorized'};}
   async begin(){

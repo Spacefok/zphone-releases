@@ -11,7 +11,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 final class Diagnostics {
-    static final String VERSION="0.3.8",BUILD="android-20261012.12";
+    static final String VERSION="0.4.2",BUILD="android-20261012.14";
     private static Diagnostics instance;
     private final File directory;
     private final String session=UUID.randomUUID().toString();
@@ -22,7 +22,7 @@ final class Diagnostics {
     private static JSONObject clean(JSONObject input) throws Exception {
         JSONObject result=new JSONObject();
         // Only operational fields created by native code. Never accept profile objects or raw core output.
-        for(String key:new String[]{"version","build","status","location","protocol","stage","errorType","reason","attempt","delayMs","latency","splitMode","splitAppCount","profileCount","records","skipped"}){
+        for(String key:new String[]{"version","build","status","location","protocol","stage","errorType","errorCode","httpStatus","operation","transport","phase","ok","durationMs","networkType","validated","otherVpn","reason","attempt","delayMs","latency","splitMode","splitAppCount","profileCount","records","skipped"}){
             Object value=input.opt(key);
             if(value instanceof Number||value instanceof Boolean)result.put(key,value);
             else if(value instanceof String){String text=(String)value;if(text.length()<=100&&text.matches("[A-Za-z0-9 .:_-]*"))result.put(key,text);}

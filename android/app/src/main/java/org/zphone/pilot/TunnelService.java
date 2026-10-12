@@ -105,6 +105,7 @@ public class TunnelService extends VpnService {
     private void connect(int token,boolean restoring){
         try{
             cleanup();if(token!=generation.get())return;
+            logNetwork();
             if(!restoring){JSONObject bundle=new ProfileStore(this).read();if(bundle==null)throw new Exception("Тестовые доступы отсутствуют.");
             var prefs=getSharedPreferences("settings",MODE_PRIVATE);String location=prefs.getString("location","auto"),protocol=prefs.getString("protocol","auto");
             JSONArray profiles=bundle.getJSONArray("profiles");choices=new ArrayList<>();
@@ -181,7 +182,7 @@ public class TunnelService extends VpnService {
         throw new Exception("NaiveProxy timeout");
     }
     private void reportFailure(JSONObject profile,Exception error){
-        try{logger.write("connection.attempt_failed",new JSONObject().put("stage",stage).put("location",profile.optString("location")).put("protocol",profile.optString("protocol")).put("errorType",error.getClass().getSimpleName()));}catch(Exception ignored){}
+        try{JSONObject info=new JSONObject().put("stage",stage).put("location",profile.optString("location")).put("protocol",profile.optString("protocol")).put("errorType",error.getClass().getSimpleName()).put("errorCode",NetworkFailure.code(error));if(error instanceof NetworkFailure)info.put("httpStatus",((NetworkFailure)error).httpStatus);logger.write("connection.attempt_failed",info);}catch(Exception ignored){}
         if((getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)==0)return;
         String detail=stage+": "+error.getClass().getSimpleName()+": "+error.getMessage();
         try{if(coreLog!=null&&coreLog.exists()&&coreLog.length()<8192)detail+=" "+new String(Files.readAllBytes(coreLog.toPath()),StandardCharsets.UTF_8);}catch(Exception ignored){}
@@ -194,7 +195,7 @@ public class TunnelService extends VpnService {
         connection.setRequestProperty("Authorization","Bearer "+secret);connection.setConnectTimeout(timeout);connection.setReadTimeout(timeout);
         try{
             int code=connection.getResponseCode();
-            if(code!=200){String message="Local API "+code;try(var error=connection.getErrorStream()){if(error!=null)message+=" "+new String(readBounded(error,2048),StandardCharsets.UTF_8);}throw new Exception(message);}
+            if(code!=200){String body="";try(var error=connection.getErrorStream()){if(error!=null)body=new String(readBounded(error,2048),StandardCharsets.UTF_8);}throw NetworkFailure.fromCore(code,body);}
             try(var stream=connection.getInputStream()){byte[] data=readBounded(stream,32768);return new JSONObject(new String(data,StandardCharsets.UTF_8));}
         }finally{connection.disconnect();}
     }
@@ -202,7 +203,17 @@ public class TunnelService extends VpnService {
         java.io.ByteArrayOutputStream output=new java.io.ByteArrayOutputStream();byte[] buffer=new byte[4096];int n;
         while((n=stream.read(buffer))!=-1){if(output.size()+n>limit)throw new Exception("Файл слишком большой.");output.write(buffer,0,n);}return output.toByteArray();
     }
-    private int health() throws Exception {return api("/proxies/Zphone-Test/delay?timeout=8000&url="+URLEncoder.encode("https://www.gstatic.com/generate_204","UTF-8"),10000).getInt("delay");}
+    private int health() throws Exception {
+        long started=SystemClock.elapsedRealtime();
+        try{int latency=api("/proxies/Zphone-Test/delay?timeout=8000&url="+URLEncoder.encode("https://www.gstatic.com/generate_204","UTF-8"),10000).getInt("delay");logger.write("health.check",new JSONObject().put("ok",true).put("durationMs",SystemClock.elapsedRealtime()-started).put("latency",latency));return latency;}
+        catch(Exception error){JSONObject info=new JSONObject().put("ok",false).put("stage",stage).put("errorType",error.getClass().getSimpleName()).put("errorCode",NetworkFailure.code(error)).put("durationMs",SystemClock.elapsedRealtime()-started);if(error instanceof NetworkFailure)info.put("httpStatus",((NetworkFailure)error).httpStatus);logger.write("health.check",info);throw error;}
+    }
+    private void logNetwork(){
+        try{ConnectivityManager manager=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);NetworkCapabilities caps=manager.getNetworkCapabilities(manager.getActiveNetwork());
+            String type=caps==null?"none":caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)?"vpn":caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)?"wifi":caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)?"mobile":caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)?"ethernet":"other";
+            logger.write("network.snapshot",new JSONObject().put("networkType",type).put("validated",caps!=null&&caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)).put("otherVpn",caps!=null&&caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)));
+        }catch(Exception error){logger.write("network.snapshot_failed",object("errorType",error.getClass().getSimpleName()));}
+    }
     private void startTunnel() throws Exception {
         Builder builder=new Builder().setSession("Zphone Preview").setMtu(1400).addAddress("198.18.0.1",30).addAddress("fd86:ea04:1111::1",126).addRoute("0.0.0.0",0).addRoute("::",0).addDnsServer("1.1.1.1");
         SplitTunnel.apply(this,builder);builder.setBlocking(false);tunnel=builder.establish();if(tunnel==null)throw new Exception("VPN permission revoked");
