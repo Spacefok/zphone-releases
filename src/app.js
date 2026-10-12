@@ -2,6 +2,8 @@ import {createIcons,Power,Shield,SlidersHorizontal,CircleHelp,ChevronRight,Chevr
 import {request,subscribe,platform} from './bridge.js';
 import {PROTOCOLS,VERSION} from '../shared/profiles.mjs';
 import {createMotion} from './motion.js';
+import {createIssueFlow,REPORT_CONSENT,REPORT_ACCEPTED} from './issue-report.js';
+import {createDiagnosticFlow} from './diagnostic-state.js';
 import './style.css';
 const icons={Power,Shield,SlidersHorizontal,CircleHelp,ChevronRight,ChevronDown,Sparkles,Route,Hand,Activity,UserRound,Check,X,Sun,Moon,Monitor,Download,Upload,RefreshCw,FileText,ExternalLink,LockKeyhole,Wifi,Signal,ShieldCheck,TriangleAlert,ArrowRight,RotateCw,MessageCircle,LoaderCircle,KeyRound,FolderOpen,Flag};
 const root=document.getElementById('app');
@@ -9,7 +11,9 @@ const motion=createMotion(root),regions=new WeakMap();
 const themeMedia=window.matchMedia('(prefers-color-scheme: dark)');
 const mobileMedia=window.matchMedia('(max-width: 480px)');
 let state={version:VERSION,platform,settings:{location:'auto',protocol:'auto',theme:'system',mode:'isolated',split:{mode:'all',apps:[]}},profiles:[],connection:{status:'off'}};
-let view='home',overlay=null,message='',update=null,updateBusy=false,diagnostic=null,pending=false,exportBusy=false;
+let view='home',overlay=null,message='',update=null,updateBusy=false,pending=false;
+const diagnosticFlow=createDiagnosticFlow(request);
+const issue=createIssueFlow(request);
 let apps=[],appsBusy=false,splitDraft=null,appQuery='',startupBusy=false;
 let accountBusy=false,accountMessage='',firstSnapshot=true;
 const splitNames={all:'Все приложения',exclude:'Выбранные без VPN',include:'Только выбранные через VPN'};
@@ -63,7 +67,7 @@ function accountSettings(){const account=state.account||{state:'unconfigured'};c
   const disabled=accountBusy?'disabled':'';
   return `<section class="account-settings"><p class="account-status ${account.state==='authorized'?'good':''}" role="status">${accountBusy?'Подождите…':labels[account.state]||'Проверяем вход'}</p>${account.message?`<p class="account-copy">${escape(account.message)}</p>`:''}${account.state==='pending'?`<p class="account-copy">Нажмите «Запустить» в боте и сверьте номер заявки. Доступ подтвердит администратор.</p><p class="login-number" aria-label="Номер заявки">${escape(account.number)}</p>${button('accountOpenBot','Открыть бота','message-circle','primary full',disabled)}${button('accountPoll','Проверить одобрение','refresh-cw','secondary full',disabled)}`:account.state==='authorized'?`<p class="account-copy">${state.profiles.length?'Подключений: '+state.profiles.length:'Теперь можно получить свои подключения.'}</p>${button('accountProfiles',state.profiles.length?'Обновить подключения':'Получить подключения','download','primary full',active()||accountBusy?'disabled':'')}${button('accountLogout','Выйти из аккаунта','user-round','text-button',disabled)}`:`<h3>Доступ через Telegram</h3><p class="account-copy">Для начала напишите нашему боту: нажмите кнопку ниже, затем «Запустить» в Telegram. После одобрения администратора здесь появятся ваши подключения.</p>${button('accountBegin',accountBusy?'Связываемся с сервисом…':'Войти через Telegram',accountBusy?'loader-circle':'message-circle','primary full',account.state==='unconfigured'||accountBusy?'disabled':'')}`}${accountMessage?`<p class="inline-error" role="alert">${escape(accountMessage)}</p>`:''}</section>`;}
 function accountView(){return `<div class="view account-view"><h2>Аккаунт</h2>${accountSettings()}<div class="section-caption">Доступ</div>${button('import',`Импортировать файл${state.profiles.length?' · '+state.profiles.length+' подключений':''}`,'key-round','choice',active()?'disabled':'')}</div>`;}
-function logging(){return platform!=='preview'?`<section><div class="section-caption">Диагностика</div><div class="setting-state"><span>Локальный журнал</span><span class="${state.diagnostics?.available?'good':'danger'}">${icon(state.diagnostics?.available?'check':'triangle-alert')}${state.diagnostics?.available?'Включён':'Ошибка записи'}</span></div>${button('markIssue','Отметить сбой','flag','choice')}${button('exportDiagnostics',exportBusy?'Сохраняем архив…':'Экспорт диагностики','download','choice',exportBusy?'disabled':'')}${platform==='windows'?button('openLogs','Открыть папку журналов','folder-open','choice'):''}</section>`:'';}
+function logging(){return platform!=='preview'?`<section><div class="section-caption">Диагностика</div><div class="setting-state"><span>Локальный журнал</span><span class="${state.diagnostics?.available?'good':'danger'}">${icon(state.diagnostics?.available?'check':'triangle-alert')}${state.diagnostics?.available?'Включён':'Ошибка записи'}</span></div>${button('markIssue','Отметить сбой','flag','choice',issue.busy?'disabled':'')}${platform==='windows'?button('openLogs','Открыть папку журналов','folder-open','choice'):''}</section>`:'';}
 function startupSettings(){return `<section class="startup-settings"><div class="section-caption">Запуск приложения</div>${[['startWithWindows','Запускать с Windows',Boolean(state.startup?.enabled),!state.startup?.available],['startInTray','Запускать в трее',state.settings.startInTray===true,false]].map(([key,label,checked,disabled])=>`<label class="switch-row"><span>${label}</span><input type="checkbox" role="switch" data-setting="${key}" ${checked?'checked':''} ${disabled?'disabled':''}><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></label>`).join('')}${state.startup?.otherVersion?'<p class="update-status">Автозапуск другой сборки</p>':''}</section>`;}
 function settings(){return `<div class="view"><h2>Настройки</h2><div class="section-caption">Внешний вид</div><div class="segment" role="group" aria-label="Тема">${[['system','monitor','Авто'],['light','sun','Светлая'],['dark','moon','Тёмная']].map(([value,glyph,label])=>button('theme',label,glyph,'',`data-value="${value}" aria-pressed="${state.settings.theme===value}"`)).join('')}</div>
   ${platform==='windows'?startupSettings():''}
@@ -71,7 +75,7 @@ function settings(){return `<div class="view"><h2>Настройки</h2><div cl
   <div class="section-caption">Маршрутизация</div>${button('split','Раздельное туннелирование','route','choice',active()?'disabled':'')}<p class="update-status">${splitNames[state.settings.split?.mode||'all']}${platform==='windows'&&state.settings.mode!=='vpn'?' · Действует в VPN-режиме':''}</p>
   <div class="setting-state"><span>Защищённый DNS</span><span class="good">${icon('lock-keyhole')}DoH</span></div>${platform==='android'?`<button type="button" class="choice" data-action="notificationSettings"><span class="choice-copy"><strong>Уведомления VPN</strong><small>${state.notificationsEnabled?'Разрешены':'Выключены'}</small></span>${icon('external-link')}</button>`:''}${updates()}</div>`;}
 function details(){const c=state.connection;return `<dl class="session">${[['Локация',c.route?names[c.route.location]:names[state.settings.location]],['Протокол',c.route?.protocol||names[state.settings.protocol]],['Выбор протокола',state.settings.protocol==='auto'?'Автоматический':'Ручной'],['Режим',platform==='android'?'VPN':state.settings.mode==='vpn'?'VPN':'Локальный прокси'],['Задержка',c.status==='connected'&&Number.isFinite(c.latency)?c.latency+' мс':'Не измерена'],['Локальный порт',c.port?String(c.port):'Не запущен'],['Доступы',state.profiles.length]].map(([key,value])=>`<div><dt>${key}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl>`;}
-function help(){return `<div class="view help-view"><h2>Помощь</h2><h3>Проверка подключения</h3><div class="help-actions">${button('diagnose','Проверить соединение','activity','primary full',diagnostic?.running?'disabled':'')}</div>${diagnostic?`<p class="diagnostic ${diagnostic.ok?'good':'danger'}" role="status">${diagnostic.running?'Проверяем…':diagnostic.ok?'Ответ получен · '+diagnostic.latency+' мс':escape(diagnostic.message)}</p>`:''}${logging()}<div class="section-caption">Обратная связь</div><button type="button" class="choice" data-action="openSupport"><span class="choice-icon">${icon('message-circle')}</span><span class="choice-copy"><strong>Написать в поддержку</strong><small>Telegram</small></span>${icon('external-link')}</button></div>`;}
+function help(){const diagnostic=diagnosticFlow.result;return `<div class="view help-view"><h2>Помощь</h2><h3>Проверка подключения</h3><div class="help-actions">${button('diagnose','Проверить соединение','activity','primary full',diagnostic?.running?'disabled':'')}</div>${diagnostic?`<p class="diagnostic ${diagnostic.ok?'good':'danger'}" role="status">${diagnostic.running?'Проверяем…':diagnostic.ok?'Ответ получен · '+diagnostic.latency+' мс':escape(diagnostic.message)}</p>`:''}${logging()}<div class="section-caption">Обратная связь</div><button type="button" class="choice" data-action="openSupport"><span class="choice-icon">${icon('message-circle')}</span><span class="choice-copy"><strong>Написать в поддержку</strong><small>Telegram</small></span>${icon('external-link')}</button></div>`;}
 function appRows(){
   const query=appQuery.toLocaleLowerCase();
   const selected=new Map(splitDraft.apps.map(app=>[app.id,app]));
@@ -95,9 +99,15 @@ function modal(){if(!overlay)return '';let title,content;
       return `<button type="button" class="option" data-action="select" data-kind="${overlay}" data-value="${value}" aria-pressed="${state.settings[overlay]===value}" ${unavailable?'disabled':''}>${overlay==='location'?flag(value):icon(value==='auto'?'sparkles':'shield-check')}<span><strong>${names[value]}</strong><small>${subtitle}</small></span>${state.settings[overlay]===value?icon('check'):''}</button>`;
     }).join('')}</div>${missing?button('nav','Управление доступами','user-round','text-button full','data-value="account"'):''}`;
   }
+  else if(overlay==='issue'){
+    title='Отметить сбой';
+    const authorized=state.account?.state==='authorized';
+    content=authorized?`<p class="modal-copy">${REPORT_CONSENT}</p>${issue.error?`<p class="inline-error" role="alert">${escape(issue.error)}</p>`:''}<div aria-live="polite" aria-busy="${issue.busy}">${issue.busy?'<p class="modal-copy" role="status">Отправляем отчёт…</p>':''}${button('sendIssue',issue.error?'Повторить отправку':'Отправить',issue.busy?'loader-circle':'upload','primary full',issue.busy?'disabled':'')}</div>`:`<p class="modal-copy">Для отправки сбоя войдите через бота в разделе «Аккаунт». Импорт файла не выполняет вход.</p>${button('nav','Перейти в аккаунт','user-round','primary full','data-value="account"')}`;
+    content+=button('closeModal','Отмена','x','secondary full',issue.busy?'disabled':'');
+  }
   else if(overlay==='switch'){title='Сменить подключение?';content=`<p class="modal-copy">Текущее соединение будет отключено перед выбором нового.</p>${button('confirmSwitch','Отключить соединение','power','primary full')}`;}
   else{title='Соединение';content=details();}
-  return `<div class="overlay"><section class="sheet" role="dialog" aria-modal="true" aria-label="${title}"><div class="sheet-head"><h2>${title}</h2><button type="button" class="icon-button" data-action="closeModal" aria-label="Закрыть">${icon('x')}</button></div>${content}</section></div>`;
+  return `<div class="overlay"><section class="sheet" role="dialog" aria-modal="true" aria-label="${title}"><div class="sheet-head"><h2>${title}</h2><button type="button" class="icon-button" data-action="closeModal" aria-label="Закрыть" ${overlay==='issue'&&issue.busy?'disabled':''}>${icon('x')}</button></div>${content}</section></div>`;
 }
 function render(){
   const nextMotion={view,overlay,message,status:state.connection.status,theme:state.settings.theme==='system'?(themeMedia.matches?'dark':'light'):state.settings.theme,startWithWindows:Boolean(state.startup?.enabled),startInTray:state.settings.startInTray===true};
@@ -123,7 +133,7 @@ function render(){
   if(focusSelector&&!focused.isConnected)root.querySelector(focusSelector)?.focus({preventScroll:true});
   motion.after(nextMotion,captured);
 }
-function acceptState(value){state=value;if(firstSnapshot){firstSnapshot=false;if(!state.profiles.length&&state.account?.state!=='unconfigured')view='account';}}
+function acceptState(value){diagnosticFlow.accept(value);state=value;if(firstSnapshot){firstSnapshot=false;if(!state.profiles.length&&state.account?.state!=='unconfigured')view='account';}}
 async function call(command,data){try{const result=await request(command,data);if(result?.connection)acceptState(result);return result;}catch(error){message=error.message;return null;}finally{render();}}
 let nextPicker='protocol',waitingPicker=false;
 root.addEventListener('click',async event=>{
@@ -132,7 +142,7 @@ root.addEventListener('click',async event=>{
   if(action==='nav'){view=value;overlay=null;message='';render();window.scrollTo(0,0);return;}
   if(action==='showUpdates'){view='settings';overlay=null;message='';render();root.querySelector('.updates')?.scrollIntoView({block:'start'});return;}
   if(action==='dismiss'){message='';render();return;}
-  if(action==='closeModal'){overlay=null;render();return;}
+  if(action==='closeModal'){if(overlay==='issue'&&issue.busy)return;overlay=null;render();return;}
   if(action==='details'){overlay='details';render();root.querySelector('[data-action="closeModal"]')?.focus();return;}
   if(action==='picker'){nextPicker=value;overlay=active()?'switch':value;render();root.querySelector('[data-action="closeModal"]')?.focus();return;}
   if(action==='confirmSwitch'){overlay=null;waitingPicker=true;await call('disconnect');if(!active()){waitingPicker=false;overlay=nextPicker;}render();return;}
@@ -158,9 +168,13 @@ root.addEventListener('click',async event=>{
     catch(error){accountMessage=error.message;}
     finally{accountBusy=false;render();}return;
   }
-  if(action==='diagnose'){diagnostic={running:true};render();diagnostic=await call('diagnose')||{ok:false,message:'Проверка не завершилась.'};render();return;}
-  if(action==='markIssue'){const result=await call(action);if(result)message=result.ok?'Отметка сбоя сохранена':'Не удалось записать отметку';render();return;}
-  if(action==='exportDiagnostics'){exportBusy=true;render();try{const result=await request(action);if(result.ok)message='Архив диагностики сохранён';}catch(error){message=error.message;}finally{exportBusy=false;render();}return;}
+  if(action==='diagnose'){const flight=diagnosticFlow.run();render();await flight;render();return;}
+  if(action==='markIssue'){if(issue.busy)return;overlay='issue';message='';render();root.querySelector('[data-action="closeModal"]')?.focus();return;}
+  if(action==='sendIssue'){
+    if(overlay!=='issue'||issue.busy||state.account?.state!=='authorized')return;
+    const flight=issue.send();render();const result=await flight;
+    if(result){overlay=null;message=REPORT_ACCEPTED;}render();return;
+  }
   if(['import','testPage','openLogs','openSupport','notificationSettings'].includes(action))await call(action);
 });
 root.addEventListener('change',async event=>{
@@ -180,7 +194,7 @@ root.addEventListener('change',async event=>{
 });
 root.addEventListener('input',event=>{if(event.target.id==='app-search'){appQuery=event.target.value;root.querySelector('.app-results').innerHTML=appRows();}});
 root.addEventListener('keydown',event=>{
-  if(event.key==='Escape'&&overlay){overlay=null;render();}
+  if(event.key==='Escape'&&overlay&&!(overlay==='issue'&&issue.busy)){overlay=null;render();}
   if(event.key==='Tab'&&overlay){const items=[...root.querySelectorAll('.sheet button:not(:disabled)')],first=items[0],last=items.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}
 });
 subscribe(value=>{acceptState(value);if(waitingPicker&&!active()){waitingPicker=false;overlay=nextPicker;}render();});

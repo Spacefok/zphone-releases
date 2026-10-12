@@ -6,7 +6,7 @@ const path=require('node:path');
 const os=require('node:os');
 let window,engine,logger,networkTimer,updateTimer,trayController,bundle=null,settings={location:'auto',protocol:'auto',theme:'system',mode:'isolated',startInTray:false,autoCheckUpdates:true,autoDownloadUpdates:false,split:{mode:'all',apps:[]}},quitting=false,showRequested=false;
 const root=path.resolve(__dirname,'..');
-const build='windows-20261012.15';
+const build='windows-20261012.17';
 app.setName('Zphone');
 app.setPath('userData',path.join(app.getPath('appData'),'ZphonePreview'));
 if(!app.requestSingleInstanceLock()){app.quit();}
@@ -110,7 +110,7 @@ app.whenReady().then(async()=>{
       return saveDiagnostics(logger,picked.filePath,{version:VERSION,build,platform:'windows',os:os.release(),arch:process.arch,connectionStatus:engine.state.status,location:settings.location,protocol:settings.protocol,mode:settings.mode,splitMode:settings.split.mode,splitAppCount:settings.split.apps.length,profileCount:bundle?.profiles.length||0});
     }
     if(command==='openLogs'){logger.write('user.open_logs');logger.flush();const error=await shell.openPath(logger.directory);if(error)throw Error('Не удалось открыть папку журналов.');return {ok:true};}
-    if(command==='markIssue'){logger.write('user.mark',{connection:engine.state,selection:{location:settings.location,protocol:settings.protocol,mode:settings.mode}});await captureNetwork('user.mark',true);return {ok:logger.available};}
+    if(command==='markIssue')return account.report(logger,{version:VERSION,build,platform:'windows',connectionStatus:engine.state.status,location:engine.state.route?.location||settings.location,protocol:engine.state.route?.protocol||settings.protocol,mode:settings.mode,splitMode:settings.split.mode,splitAppCount:settings.split.apps.length,profileCount:bundle?.profiles.length||0},{confirmed:data?.confirmed===true});
     if(command==='listApps')return {apps:await runningApplications()};
     if(command==='pickApp'){
       if(busy())throw Error('Сначала отключите соединение.');

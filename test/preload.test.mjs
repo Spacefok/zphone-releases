@@ -11,10 +11,10 @@ test('desktop bridge permits application pickers and rejects unknown commands',a
     ipcRenderer:{invoke:async(...args)=>{calls.push(args);return {ok:true};}},
   };
   vm.runInNewContext(fs.readFileSync(new URL('../desktop/preload.cjs',import.meta.url),'utf8'),{require:name=>{assert.equal(name,'electron');return electron;}});
-  for(const command of ['listApps','pickApp','openSupport']){
+  for(const command of ['listApps','pickApp','openSupport','markIssue']){
     assert.deepEqual(await bridge.request(command),{ok:true});
     assert.equal(calls.at(-1)[1],command);
   }
   await assert.rejects(bridge.request('execute'),/Unknown command/);
-  assert.equal(calls.length,3);
+  assert.equal(calls.length,4);
 });

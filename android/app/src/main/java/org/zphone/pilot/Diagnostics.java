@@ -11,7 +11,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 final class Diagnostics {
-    static final String VERSION="0.5.1",BUILD="android-20261012.15";
+    static final String VERSION="0.6.7",BUILD="android-20261012.17";
     private static Diagnostics instance;
     private final File directory;
     private final String session=UUID.randomUUID().toString();
@@ -42,6 +42,7 @@ final class Diagnostics {
         }catch(Exception e){available=false;}
     }
     synchronized JSONObject snapshot() throws Exception {return new JSONObject().put("available",available).put("session",session);}
+    synchronized JSONObject report(JSONObject metadata,long now) throws Exception {return IssueReport.collect(directory,COUNT,metadata,now,UUID.randomUUID().toString());}
     static String filename(){return "Zphone-diagnostics-"+Instant.now().toString().replace(':','-')+"-"+UUID.randomUUID().toString().substring(0,6)+".zip";}
     void export(OutputStream stream,JSONObject metadata) throws Exception {stream.write(archive(metadata));stream.flush();}
     private synchronized byte[] archive(JSONObject metadata) throws Exception {

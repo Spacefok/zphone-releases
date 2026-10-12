@@ -1,13 +1,18 @@
 # Zphone Native Runtime Source
 
 This archive contains the corresponding modified mihomo source used by both
-Windows x64 and Android arm64 releases 0.3.6 and 0.3.7. No access profiles or
+Windows x64 and Android arm64 release 0.6.7. No access profiles or
 private application settings are included.
 
 Upstream: https://github.com/MetaCubeX/mihomo
 Revision: 88dcbf7f1614a67c3b36b848ee3592dfa92ada36 (v1.19.32).
 The included client-random-prefix patch is already applied. Dependencies and
 their license notices are included under mihomo/vendor. See mihomo/LICENSE.
+
+Generate `Zphone-native-source-0.6.7.zip` with `scripts/package-native-source.ps1`.
+The packager verifies both local core binaries against their build metadata,
+the pinned revision and patch hash. `BUILD-INPUTS.json` records those inputs.
+The client source package contains the remaining application and packaging code.
 
 Use Go 1.26.9. From the mihomo directory, build Windows with:
 

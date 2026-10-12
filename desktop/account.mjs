@@ -1,5 +1,6 @@
 import {createAccountTransport} from './account-http.mjs';
 import {accessEndpoints,canRetryAccess} from '../shared/account-policy.mjs';
+import {createIssueReport,REPORT_BYTES,REPORT_WINDOW_MS,reportFailure} from './diagnostics-report.mjs';
 export class Account {
   constructor({config,readToken,writeToken,transport=createAccountTransport()}){Object.assign(this,{config,readToken,writeToken,transport});this.pending=null;this.state={state:config?.baseUrl?'signed_out':'unconfigured'};}
   snapshot(){return {...this.state};}
@@ -42,7 +43,39 @@ export class Account {
     return this.snapshot();
   }
   async profiles(){if(!this.token)throw Error('Сначала войдите через бота.');return this.call('/v1/session/profiles',{},this.token);}
+  clearReport(){clearTimeout(this.reportExpiry);this.pendingReport=null;}
+  async report(logger,metadata,{confirmed=false,now}={}){
+    if(confirmed!==true)throw Error('Подтвердите отправку отчёта.');
+    if(!this.token)throw Error('Для отправки сбоя откройте «Аккаунт» и войдите через бота. Импорт файла не выполняет вход.');
+    if(this.reportFlight)return this.reportFlight;
+    this.reportFlight=this.sendReport(logger,metadata,now);
+    try{return await this.reportFlight;}finally{this.reportFlight=null;}
+  }
+  async sendReport(logger,metadata,now){
+    const token=this.token;
+    logger.write('user.mark',metadata);
+    now??=Date.now();
+    try{
+      if(!this.pendingReport||this.pendingReport.token!==token||now-this.pendingReport.time>REPORT_WINDOW_MS||now<this.pendingReport.time){
+        this.clearReport();
+        this.pendingReport={token,time:now,body:await createIssueReport(logger,metadata,{now})};
+        const pending=this.pendingReport;
+        this.reportExpiry=setTimeout(()=>{if(this.pendingReport===pending)this.clearReport();},REPORT_WINDOW_MS);this.reportExpiry.unref();
+      }
+      const body=this.pendingReport.body;
+      if(this.token!==token)throw Object.assign(Error('Session changed'),{status:401});
+      if(Buffer.byteLength(JSON.stringify(body))>REPORT_BYTES)throw Error('Report too large');
+      const result=await this.call('/v1/session/report',body,token);
+      if(result?.ok!==true||result.reportId!==body.reportId||!['queued','sent'].includes(result.state))throw Error('Invalid report acknowledgement');
+      this.clearReport();logger.write('report.accepted',{ok:true});
+      return {ok:true,reportId:result.reportId,state:result.state};
+    }catch(error){
+      if(error.status===401||error.status===403)this.clearReport();
+      logger.write('report.failed',{status:error.status,code:error.code});throw reportFailure(error);
+    }finally{logger.flush();}
+  }
   async logout(){
+    this.clearReport();
     let remoteRevoked=true;
     try{if(this.token)await this.call('/v1/session/logout',{},this.token);}catch{remoteRevoked=false;}
     await this.writeToken(null);this.token=null;this.pending=null;

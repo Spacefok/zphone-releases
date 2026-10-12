@@ -1,31 +1,54 @@
-# Zphone
+# Zphone 0.6.7
 
-Early-access VPN client for Windows x64 and Android arm64. Access requires an approved
-private profile; downloading this application does not grant VPN access.
+Early-access VPN client for Windows x64 and Android arm64. Downloading the app
+does not grant VPN access. Sign in through the main bot
+[@Zteganon_bot](https://t.me/Zteganon_bot). Every new device, including an ordinary
+user's device, requires administrator approval. Available connections depend
+on approved access. Importing a profile is not account sign-in.
 
-Version 0.5.1 introduces the Zphone name and icon. It updates the existing
-Preview installation in place and retains its local storage, Android signing
-identity and Windows startup entry. Other VPN clients and their connections
-are not changed. See [installation and verification instructions](TESTING.md).
+Existing Preview installations retain their identity and settings when updated
+with the same signing certificate. See [installation and verification](TESTING.md).
 
 ## Features
 
-- Automatic or manual protocol selection: TrustTunnel, Mieru, NaiveProxy,
-  AmneziaWG and Hysteria 2.
-- Application-based split tunneling, connection recovery and local diagnostics.
+- Automatic or manual TrustTunnel, Mieru, NaiveProxy, AmneziaWG and Hysteria 2.
+- Application-based split tunneling, recovery and local diagnostics.
 - Windows tray and startup settings; Android foreground traffic notification.
-- Signed update metadata, priority notices, explicit installation and Telegram device approval.
-- First-run account screen and optional installer desktop shortcut / launch actions.
+- Signed update metadata, priority notices and explicit installation.
+- Account sign-in and per-device approval through Telegram.
 
-The test channel is separate from stable releases. Installation never starts
-while this application's VPN is active. Windows requests administrator rights
-at launch. Opt-in startup requests UAC too; it does not bypass Windows security.
-The client does not provide a persistent OS-enforced kill switch.
+The test channel is separate from stable. Update installation is blocked while
+this app's VPN is active. Windows requests administrator rights, including
+opt-in startup; it does not bypass UAC. There is no persistent OS-enforced
+kill switch.
+
+## Issue Reports And Privacy
+
+Help > "Отметить сбой" first asks for confirmation. Only after confirmation does
+the authenticated client send allowlisted diagnostic events from the last three
+minutes to the backend for forwarding to the administrator bot. The report is
+linked to the account. Passwords, tokens, visited sites, hostnames, user-home
+paths, raw core output, profile contents and application names are excluded.
+Summary fields cover version/build, platform, connection state, selected route,
+routing mode and counts of profiles and split-tunnel applications.
+
+Reports contain at most 1,000 newest records and 196,608 UTF-8 bytes. There is no
+background report upload. Cancel before sending transmits nothing. Success means
+backend acceptance, not Telegram delivery. On a network error, retry manually
+within three minutes; a recent redacted report stays only in memory with the
+same identifier. Reporting does not change the VPN; upload failure does not stop
+logging. Unsigned-in users must sign in. The diagnostics export action is no
+longer present in the interface.
+
+Profiles and account credentials are protected by Windows DPAPI or Android
+Keystore. Logout revokes the account session, not issued server credentials.
+Windows account requests can use configured HTTPS fallback endpoints and secure
+DNS resolution with TLS verification. No account tokens go to the DNS provider.
 
 ## Build
 
-Use Node.js, JDK 17+, Gradle 8.7, the Android SDK and the pinned native toolchains
-described in the build scripts. Do not store credentials in this repository.
+Use Node.js, JDK 17+, Gradle 8.7, Android SDK 34 and the pinned native toolchains.
+Keep credentials and signing keys outside the source tree.
 
 ```powershell
 npm ci
@@ -37,43 +60,42 @@ node scripts/fetch-naive.mjs
 npm test
 npm run build:icons
 npm run build
-npm run package:installer
 npm run sync:android
 .\scripts\build-preview-android.ps1
+npm run package:installer
 ```
 
-The Android command above builds a release APK using the existing application key
-kept outside the source tree. An existing APK
-with a different signing certificate cannot be replaced without a planned
-migration. Never uninstall an existing client without backing up its access.
+For an upgrade release, first verify the existing external Android keystore
+and password file are present. Do not use the script's first-time key-generation
+path for an upgrade. Package `org.zphone.preview` uses versionCode 16 for 0.6.7
+(build android-20261012.17; Windows build windows-20261012.17).
+A different certificate cannot replace an existing installation. Do not uninstall
+a working client to bypass this check.
 
-The installer build does not publish. `updates.json` contains public configuration
-only. The release signing key and authorization bridge key must remain private.
-No GitHub access token is embedded in the client or needed to download releases.
+Mock report UI checks: `node scripts/qa-issue-report.cjs`, with separately
+installed Playwright. Optional `ZPHONE_PLAYWRIGHT_PATH` and
+`ZPHONE_CHROMIUM_PATH` select local tooling. The script uses an isolated mock
+bridge, not an installed app or VPN.
 
-## Privacy
+Run `node scripts/qa-diagnostic-state.cjs` after the UI build to check that
+connection-context changes clear old diagnostics and discard late replies.
 
-Profiles are encrypted using Windows DPAPI or Android Keystore. Diagnostics stay
-local until explicitly exported. The login service receives a device platform and
-Telegram identity through the bot, but not installed applications or traffic logs.
-Each new device requires administrator approval. Logging out revokes its delivery
-session; revoking already issued VPN credentials is a separate server operation.
-Windows login uses the system network stack. On connection errors it may resolve
-the login hostname through Cloudflare DNS over HTTPS, retaining normal TLS hostname
-and chain verification. No session tokens are sent to the DNS provider.
+Build and draft preparation do not publish. `updates.json` is public
+configuration. Signed release metadata is not Windows Authenticode; the current
+Windows installer has no Authenticode signature.
 
 ## License And Dependencies
 
-Client code is GPL-3.0-only. Keep the included notices and corresponding source
-with binary distributions. Native runtime sources must accompany public releases:
+Client code is GPL-3.0-only. Distribute corresponding source and notices with
+binaries. See [native source instructions](NATIVE-SOURCE.md).
 
-- mihomo v1.19.32, commit `88dcbf7f1614a67c3b36b848ee3592dfa92ada36`, GPL-3.0;
-  local changes and build instructions are in `patches/` and `scripts/build-core.ps1`.
+- mihomo v1.19.32, commit `88dcbf7f1614a67c3b36b848ee3592dfa92ada36`,
+  GPL-3.0; local changes in `patches/` and `scripts/build-core.ps1`.
 - NaiveProxy v154.0.8037.49-4, BSD-3-Clause.
 - hev-socks5-tunnel 2.18.0, MIT.
 - Electron, electron-updater, adm-zip: MIT; Lucide: ISC.
 - Build-time image processing: sharp, Apache-2.0.
 - Country images: Twitter Twemoji 14.0.2, CC-BY 4.0.
 
-Dependencies retain their own copyright notices. See `licenses/`, the lockfile,
-and pinned download/build scripts for source locations and revisions.
+Dependencies retain their copyright notices. See `licenses/`, the lockfile
+and pinned build/download scripts for source locations and revisions.

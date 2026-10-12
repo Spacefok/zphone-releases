@@ -26,6 +26,7 @@ public class MainActivity extends Activity {
     private WebView web;
     private Account account;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
+    private final java.util.concurrent.atomic.AtomicBoolean reportBusy=new java.util.concurrent.atomic.AtomicBoolean();
     private long importId=-1,vpnId=-1,exportId=-1,notificationId=-1;
     @Override public void onCreate(Bundle saved){
         super.onCreate(saved);current=new WeakReference<>(this);
@@ -78,6 +79,7 @@ public class MainActivity extends Activity {
     });}
     final class Bridge {
         @JavascriptInterface public void request(long id,String command,String data){
+            if(command.equals("markIssue")&&!reportBusy.compareAndSet(false,true)){reply(id,null,"Отчёт уже отправляется. Дождитесь результата.");return;}
             worker.execute(()->{
                 try{
                     JSONObject arg=new JSONObject(data);Object result;
@@ -104,7 +106,14 @@ public class MainActivity extends Activity {
                         case "listApps":result=new JSONObject().put("apps",SplitTunnel.apps(MainActivity.this));break;
                         case "connect":Diagnostics.get(MainActivity.this).write("user.connect",settings());connect(id);return;
                         case "disconnect":Diagnostics.get(MainActivity.this).write("user.disconnect",new JSONObject());TunnelService.disconnect();result=snapshot();break;
-                        case "markIssue":Diagnostics.get(MainActivity.this).write("user.mark",TunnelService.snapshot());result=new JSONObject().put("ok",Diagnostics.get(MainActivity.this).snapshot().getBoolean("available"));break;
+                        case "markIssue":
+                            if(account==null)throw new Exception("Откройте «Аккаунт» и войдите через бота. Импорт файла не выполняет вход.");
+                            JSONObject selection=settings(),connection=TunnelService.snapshot(),splitSettings=selection.getJSONObject("split");
+                            JSONObject currentProfile=connection.optJSONObject("route");
+                            JSONObject reportSummary=new JSONObject().put("version",Diagnostics.VERSION).put("build",Diagnostics.BUILD).put("platform","android").put("connectionStatus",connection.optString("status"))
+                                .put("location",currentProfile==null?selection.optString("location"):currentProfile.optString("location")).put("protocol",currentProfile==null?selection.optString("protocol"):currentProfile.optString("protocol"))
+                                .put("mode","vpn").put("splitMode",splitSettings.optString("mode")).put("splitAppCount",splitSettings.getJSONArray("apps").length()).put("profileCount",ProfileStore.publicProfiles(new ProfileStore(MainActivity.this).read()).length());
+                            result=account.report(Diagnostics.get(MainActivity.this),reportSummary,Boolean.TRUE.equals(arg.opt("confirmed")));break;
                         case "exportDiagnostics":
                             runOnUiThread(()->{if(exportId!=-1){reply(id,null,"Экспорт уже открыт.");return;}exportId=id;try{Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/zip").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE,Diagnostics.filename());startActivityForResult(save,103);}catch(Exception e){exportId=-1;reply(id,null,"Не удалось открыть сохранение файла.");}});return;
                         case "import":
@@ -128,6 +137,7 @@ public class MainActivity extends Activity {
                     }
                     reply(id,result,null);
                 }catch(Exception e){reply(id,null,e.getMessage()==null?"Не удалось выполнить действие.":e.getMessage());}
+                finally{if(command.equals("markIssue"))reportBusy.set(false);}
             });
         }
     }

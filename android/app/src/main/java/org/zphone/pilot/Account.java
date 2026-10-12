@@ -20,6 +20,10 @@ import java.util.List;
 final class Account {
     private final Context context;
     private JSONObject pending;
+    private volatile JSONObject pendingReport;
+    private java.util.Timer reportExpiry;
+    private long reportTime;
+    private String reportOwner;
     private String token,state="unconfigured",message="",preferred;
     Account(Context context) throws Exception {this.context=context.getApplicationContext();if(config().optString("baseUrl","").startsWith("https://")){token=load();state=token==null?"signed_out":"authorized";}}
     private JSONObject config() throws Exception {return UpdateCheck.config(context).getJSONObject("auth");}
@@ -95,7 +99,33 @@ final class Account {
         else if(status.equals("expired")||status.equals("rejected")||status.equals("consumed")){pending=null;state=status.equals("consumed")?"expired":status;}
     }
     synchronized JSONObject profiles() throws Exception {if(token==null)throw new Exception("Сначала войдите через бота.");JSONObject result=call("/v1/session/profiles",new JSONObject(),token);if(!result.optString("state").equals("ready"))throw new Exception("Доступ одобрен, подключения ещё готовятся.");return result.getJSONObject("bundle");}
+    private void clearReport(){if(reportExpiry!=null){reportExpiry.cancel();reportExpiry=null;}pendingReport=null;reportOwner=null;}
+    JSONObject report(Diagnostics logger,JSONObject metadata,boolean confirmed) throws Exception {
+        if(!confirmed)throw new Exception("Подтвердите отправку отчёта.");
+        if(token==null)throw new Exception("Для отправки сбоя откройте «Аккаунт» и войдите через бота. Импорт файла не выполняет вход.");
+        logger.write("user.mark",metadata);long now=System.currentTimeMillis();
+        try{
+            JSONObject body=pendingReport;
+            if(body==null||!token.equals(reportOwner)||now-reportTime>IssueReport.WINDOW_MS||now<reportTime){
+                clearReport();body=logger.report(metadata,now);pendingReport=body;reportTime=now;reportOwner=token;
+                final JSONObject held=body;final java.util.Timer expiry=new java.util.Timer(true);reportExpiry=expiry;
+                expiry.schedule(new java.util.TimerTask(){public void run(){if(pendingReport==held)pendingReport=null;expiry.cancel();}},IssueReport.WINDOW_MS);
+            }
+            if(IssueReport.bytes(body)>IssueReport.MAX_BYTES)throw new Exception("Report too large");
+            JSONObject result=call("/v1/session/report",body,token);
+            if(!IssueReport.accepted(result,body))throw new Exception("Invalid report acknowledgement");
+            clearReport();logger.write("report.accepted",new JSONObject().put("ok",true));
+            return new JSONObject().put("ok",true).put("reportId",result.getString("reportId")).put("state",result.getString("state"));
+        }catch(Exception error){
+            int status=error instanceof AccessFailure?((AccessFailure)error).status:0;
+            String code=error instanceof AccessFailure?((AccessFailure)error).code:NetworkFailure.code(error);
+            if(status==401||status==403)clearReport();
+            logger.write("report.failed",new JSONObject().put("status",status).put("errorCode",code));
+            throw new Exception(IssueReport.failure(status,code));
+        }
+    }
     synchronized void logout() throws Exception {
+        clearReport();
         boolean revoked=true;
         try{if(token!=null)call("/v1/session/logout",new JSONObject(),token);}catch(Exception e){revoked=false;}
         save(null);token=null;pending=null;state="signed_out";
