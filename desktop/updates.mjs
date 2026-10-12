@@ -6,8 +6,8 @@ import {verifyRelease,readJson} from '../shared/release.mjs';
 const require=createRequire(import.meta.url);
 
 export class Updates {
-  constructor({config,version,installed,logger,notify=()=>{},makeUpdater}){
-    Object.assign(this,{config,version,installed,logger,notify,makeUpdater});
+  constructor({config,version,installed,logger,notify=()=>{},makeUpdater,fetcher=(...args)=>fetch(...args)}){
+    Object.assign(this,{config,version,installed,logger,notify,makeUpdater,fetcher});
     this.state={state:config?.publicKey?'idle':'unconfigured'};
   }
   set(next){this.state={...this.state,...next};this.notify();return this.snapshot();}
@@ -17,7 +17,7 @@ export class Updates {
     if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)||!['test','stable'].includes(channel))throw Error('Invalid update configuration');
     const url=`https://github.com/${repository}/releases/download/${channel}/release.json`;
     // GitHub redirects public release assets to its download CDN; no credentials are sent.
-    const envelope=await readJson(await fetch(url,{signal:AbortSignal.timeout(20000)}));
+    const envelope=await readJson(await this.fetcher(url,{signal:AbortSignal.timeout(20000)}));
     const release=verifyRelease(envelope,this.config);
     this.envelope=envelope;this.selected=release;return release;
   }
@@ -47,7 +47,7 @@ export class Updates {
       // Older updater releases expose the availability through updateInfo only.
       const {compareVersion}=await import('../shared/profiles.mjs');
       const newer=available??(result?.updateInfo&&compareVersion(result.updateInfo.version,this.version)>0);
-      return this.set({state:newer?'available':'current',version:result?.updateInfo.version,notes:this.selected?.notes||''});
+      return this.set({state:newer?'available':'current',version:result?.updateInfo.version,notes:this.selected?.notes||'',priority:this.selected?.priority||'normal'});
     }catch{this.logger?.write('update.check_failed');return this.set({state:'error',message:'Не удалось проверить подписанное обновление.'});}
     finally{this.running=false;}
   }

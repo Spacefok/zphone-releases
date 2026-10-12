@@ -14,3 +14,10 @@ test('offline logout clears local access but does not claim server revocation',a
   await account.restore();account.call=async()=>{throw Error('offline or expired');};await account.logout();
   assert.equal(token,null);assert.equal(account.snapshot().state,'signed_out');assert.match(account.snapshot().message,/не подтверждён/);await assert.rejects(account.profiles());
 });
+test('repeated login clicks share one request and reopen the same unexpired bot link',async()=>{
+  const account=new Account({config:{baseUrl:'https://example.invalid',botUsername:'example_bot'}});
+  let calls=0,finish;account.call=()=>{calls++;return new Promise(resolve=>finish=resolve);};
+  const first=account.begin(),second=account.begin();assert.equal(calls,1);
+  finish({code:'a'.repeat(32),secret:'b'.repeat(43),number:'123456',expires:Date.now()/1000+600});
+  assert.deepEqual(await first,await second);assert.deepEqual(await account.begin(),account.botLink());assert.equal(calls,1);
+});

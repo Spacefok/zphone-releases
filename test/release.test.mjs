@@ -31,6 +31,11 @@ test('VPN started during verification blocks installation too',async()=>{const u
 test('a concurrent check cannot clear installation state',async()=>{const updater=new Updates({config,version:'1.0.0',installed:true});updater.state={state:'installing'};updater.init=()=>assert.fail('must not check');assert.equal((await updater.check()).state,'installing');});
 
 test('release rejects nonstandard download ports',()=>{assert.throws(()=>verifyRelease(signed({...release,assets:{'windows-x64':{...asset,url:asset.url.replace('github.com','github.com:8443')}}}),config));});
+test('update priority is signed, allowlisted and backward compatible',()=>{
+  assert.equal(verifyRelease(signed(),config).priority,'normal');
+  for(const priority of ['normal','important','critical'])assert.equal(verifyRelease(signed({...release,priority}),config).priority,priority);
+  for(const priority of ['force',true,42,{}])assert.throws(()=>verifyRelease(signed({...release,priority}),config));
+});
 test('real NSIS provider verifies a signed test download without touching installed apps',async()=>{
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'zphone-update-test-')),oldFetch=globalThis.fetch;
   try{

@@ -43,6 +43,7 @@ final class UpdateCheck {
         RSAPublicKey key=(RSAPublicKey)KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(Base64.getDecoder().decode(pem)));if(key.getModulus().bitLength()<3072)throw new Exception("Invalid signing key");
         byte[] bytes=Base64.getDecoder().decode(body);Signature check=Signature.getInstance("SHA256withRSA");check.initVerify(key);check.update(bytes);if(!check.verify(Base64.getDecoder().decode(sig)))throw new Exception("Invalid release signature");
         JSONObject release=new JSONObject(new String(bytes,StandardCharsets.UTF_8));
+        String priority=release.optString("priority","normal");if(!priority.matches("normal|important|critical"))throw new Exception("Invalid release priority");
         if(!release.getString("format").equals("zphone-release-v1")||!release.getString("channel").equals(config.getString("channel"))||Instant.parse(release.getString("expires")).toEpochMilli()<=System.currentTimeMillis()||Instant.parse(release.getString("published")).toEpochMilli()>System.currentTimeMillis()+300000||!release.getString("version").matches("[0-9]+\\.[0-9]+\\.[0-9]+")||release.getString("notes").length()>4000)throw new Exception("Invalid release");
         JSONObject asset=release.getJSONObject("assets").getJSONObject("android-arm64");URL url=new URL(asset.getString("url"));
         if(!url.getProtocol().equals("https")||!url.getHost().equals("github.com")||url.getUserInfo()!=null||url.getQuery()!=null||url.getRef()!=null||!url.getPath().startsWith("/"+config.getString("repository")+"/releases/download/")||url.getPath().contains("..")||asset.getLong("bytes")<1||asset.getLong("bytes")>1073741824L||!asset.getString("sha256").matches("[a-f0-9]{64}")||!asset.getString("sha512").matches("[A-Za-z0-9+/]{86}==")||!asset.getString("package").equals("org.zphone.preview")||asset.getLong("versionCode")<1)throw new Exception("Invalid release asset");
@@ -56,7 +57,7 @@ final class UpdateCheck {
             state("checking","");HttpURLConnection c=open(new URL("https://github.com/"+repo+"/releases/download/"+channel+"/release.json"));
             JSONObject signed;try(var stream=c.getInputStream()){signed=new JSONObject(new String(TunnelService.readBounded(stream,65536),StandardCharsets.UTF_8));}finally{c.disconnect();}
             JSONObject release=verify(signed,cfg);long current=context.getPackageManager().getPackageInfo(context.getPackageName(),0).getLongVersionCode();
-            synchronized(UpdateCheck.class){selected=release;envelope=signed;status.put("version",release.getString("version")).put("notes",release.getString("notes"));}
+            synchronized(UpdateCheck.class){selected=release;envelope=signed;status.put("version",release.getString("version")).put("notes",release.getString("notes")).put("priority",release.optString("priority","normal"));}
             return state(release.getJSONObject("assets").getJSONObject("android-arm64").getLong("versionCode")>current?"available":"current","");
         }catch(Exception e){return state("error","Не удалось проверить подписанное обновление.");}finally{synchronized(UpdateCheck.class){working=false;}}
     }

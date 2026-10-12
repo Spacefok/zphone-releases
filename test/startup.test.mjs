@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createStartup,shouldStartHidden,STARTUP_ARGS,STARTUP_NAME} from '../desktop/startup.cjs';
+import {createStartup,shouldStartHidden,elevatedStartup,STARTUP_ARGS,STARTUP_NAME} from '../desktop/startup.cjs';
 function fixture(options={}){
   let entries=[],writes=[];
   const executable='C:\\Zphone Test\\Zphone-Test.exe';
@@ -32,4 +32,15 @@ test('start hidden is independent of login registration and needs a usable tray'
   assert.equal(shouldStartHidden({startInTray:true,startWithWindows:false},true),true);
   assert.equal(shouldStartHidden({startInTray:false,startWithWindows:true},true),false);
   assert.equal(shouldStartHidden({startInTray:true},false),false);assert.equal(shouldStartHidden({startInTray:'true'},true),false);
+});
+test('elevated startup explicitly requests UAC, escapes paths and remains opt-in',()=>{
+  const path="C:\\User's files\\Zphone-Preview.exe",launch=elevatedStartup(path);
+  assert.match(launch.path,/WindowsPowerShell/);
+  const script=Buffer.from(launch.args.at(-1),'base64').toString('utf16le');
+  assert.equal(script,"Start-Process -FilePath 'C:\\User''s files\\Zphone-Preview.exe' -Verb RunAs -WindowStyle Hidden");
+  const f=fixture({elevation:true});assert.equal(f.writes.length,0);assert.equal(f.controller.set(true).enabled,true);assert.deepEqual(f.writes[0].args,elevatedStartup(f.executable).args);assert.equal(f.controller.set(false).enabled,false);
+});
+test('legacy opt-in startup can migrate without changing unrelated entries',()=>{
+  const f=fixture({elevation:true});f.setEntries([{name:STARTUP_NAME,path:f.executable,args:STARTUP_ARGS,scope:'user',enabled:true}]);
+  assert.equal(f.controller.read().legacy,true);assert.equal(f.writes.length,0);f.controller.set(true);assert.equal(f.controller.read().legacy,false);
 });

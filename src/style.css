@@ -34,3 +34,17 @@ button:focus-visible{outline:2px solid var(--good);outline-offset:3px}
  .update-progress{width:100%;height:8px;accent-color:var(--accent)}
  .update-notes{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.5}
  .login-number{font-size:28px;font-variant-numeric:tabular-nums;letter-spacing:0}
+.account-status{margin:22px 0;font-size:14px;color:var(--muted)}
+.account-copy{margin:12px 0 20px;font-size:14px;color:var(--muted);overflow-wrap:anywhere}
+.account-settings .login-number{margin:12px 0 20px}
+.account-settings .secondary,.updates>.secondary{margin-top:12px}
+.account-settings .primary .lucide-loader-circle{animation:spin 1.3s linear infinite}
+.update-banner{border-block:1px solid var(--line);padding:16px 0;margin:0 0 22px}
+.update-banner-title{display:flex;align-items:center;gap:10px;color:var(--good)}
+.update-banner.critical .update-banner-title{color:var(--error)}
+.update-banner h2{font-size:16px;overflow-wrap:anywhere}
+.update-banner .update-notes{margin:10px 0 14px;font-size:13px}
+.updates .update-notes{margin:12px 0}
+.update-banner .primary span,.updates .primary span{overflow-wrap:anywhere;min-width:0}
+#app[data-layout=mobile] .bottom-nav{grid-template-columns:repeat(4,minmax(0,1fr));gap:0;padding-left:4px;padding-right:4px}
+#app[data-layout=mobile] .bottom-nav .nav-item{font-size:10px;min-width:0}

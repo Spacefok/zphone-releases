@@ -14,11 +14,13 @@ export function verifyRelease(envelope,{publicKey,repository,channel='test',now=
   if(release.format!=='zphone-release-v1'||release.channel!==channel||!Number.isFinite(Date.parse(release.expires))||Date.parse(release.expires)<=now||!Number.isFinite(Date.parse(release.published))||Date.parse(release.published)>now+300000)throw Error('Invalid release lifetime or channel');
   compareVersion(release.version,'0.0.0');
   if(typeof release.notes!=='string'||release.notes.length>4000)throw Error('Invalid release notes');
+  const priority=release.priority??'normal';
+  if(!['normal','important','critical'].includes(priority))throw Error('Invalid release priority');
   const asset=release.assets?.[platform];
   if(!asset||!Number.isSafeInteger(asset.bytes)||asset.bytes<1||asset.bytes>1024*1024*1024||!/^[a-f0-9]{64}$/.test(asset.sha256)||!/^[A-Za-z0-9+/]{86}==$/.test(asset.sha512))throw Error('Invalid release artifact');
   releaseAssetUrl(asset.url,repository);
   if(platform==='android-arm64'&&(!Number.isSafeInteger(asset.versionCode)||asset.versionCode<1||asset.package!=='org.zphone.preview'))throw Error('Invalid Android release');
-  return {...release,asset};
+  return {...release,priority,asset};
 }
 export function verifyArtifact(bytes,asset){
   if(bytes.length!==asset.bytes||createHash('sha256').update(bytes).digest('hex')!==asset.sha256||createHash('sha512').update(bytes).digest('base64')!==asset.sha512)throw Error('Release file rejected');

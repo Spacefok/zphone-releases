@@ -1,4 +1,4 @@
-const {app,BrowserWindow,ipcMain,dialog,safeStorage,shell,session,powerMonitor,Tray,Menu,nativeImage}=require('electron');
+const {app,BrowserWindow,ipcMain,dialog,safeStorage,shell,session,net,powerMonitor,Tray,Menu,nativeImage}=require('electron');
 const {createTray}=require('./tray.cjs');
 const {createStartup,shouldStartHidden}=require('./startup.cjs');
 const fs=require('node:fs/promises');
@@ -6,7 +6,7 @@ const path=require('node:path');
 const os=require('node:os');
 let window,engine,logger,networkTimer,updateTimer,trayController,bundle=null,settings={location:'auto',protocol:'auto',theme:'system',mode:'isolated',startInTray:false,autoCheckUpdates:true,autoDownloadUpdates:false,split:{mode:'all',apps:[]}},quitting=false,showRequested=false;
 const root=path.resolve(__dirname,'..');
-const build='windows-20261012.11';
+const build='windows-20261012.12';
 app.setName('Zphone Preview');
 app.setPath('userData',path.join(app.getPath('appData'),'ZphonePreview'));
 if(!app.requestSingleInstanceLock()){app.quit();}
@@ -22,6 +22,7 @@ app.whenReady().then(async()=>{
   const {runningApplications,applicationItem}=await import('./windows-apps.mjs');
   const {Updates}=await import('./updates.mjs');
   const {Account}=await import('./account.mjs');
+  const {createAccountTransport}=await import('./account-http.mjs');
   const updateConfig=JSON.parse(await fs.readFile(path.join(root,'updates.json'),'utf8'));
   const storage=app.getPath('userData'),vault=path.join(storage,'access.enc');
   await fs.mkdir(storage,{recursive:true});
@@ -29,7 +30,8 @@ app.whenReady().then(async()=>{
   logger.write('app.start',{version:VERSION,build,os:os.release(),arch:process.arch,electron:process.versions.electron,pid:process.pid,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone});logger.flush();
   try{const saved=JSON.parse(await fs.readFile(path.join(storage,'settings.json'),'utf8'));settings={...settings,...saved,split:validateSplit(saved.split)};}catch{}
   settings.startInTray=settings.startInTray===true;
-  const startup=createStartup({app,storedPath:settings.startupPath,name:'ZphonePreview'});
+  const startup=createStartup({app,storedPath:settings.startupPath,name:'ZphonePreview',elevation:true});
+  if(startup.read().legacy){try{startup.set(true);settings.startupPath=process.execPath;await fs.writeFile(path.join(storage,'settings.json'),JSON.stringify(settings));logger.write('startup.migrated');}catch(error){logger.write('startup.migration_failed',{error});}}
   try{if(safeStorage.isEncryptionAvailable())bundle=validateBundle(JSON.parse(safeStorage.decryptString(await fs.readFile(vault))));}catch(error){logger.write('access.load_failed',{code:error.code||'invalid_or_unreadable'});}
   if(bundle)logger.protectProfiles(bundle.profiles);
   logger.write('access.loaded',{count:bundle?.profiles.length||0,protocols:[...new Set(bundle?.profiles.map(p=>p.protocol)||[])]});logger.flush();
@@ -49,15 +51,16 @@ app.whenReady().then(async()=>{
   };
   const accountVault=path.join(storage,'account.enc');
   account=new Account({config:updateConfig.auth,
+    transport:createAccountTransport({fetcher:(url,options)=>net.fetch(String(url),options),logger}),
     readToken:async()=>{try{return safeStorage.decryptString(await fs.readFile(accountVault));}catch{return null;}},
     writeToken:async token=>{if(!token){await fs.rm(accountVault,{force:true});return;}if(!safeStorage.isEncryptionAvailable())throw Error('Защищённое хранилище недоступно.');await fs.writeFile(accountVault,safeStorage.encryptString(token));}
   });
   await account.restore();
   const installed=app.isPackaged&&await fs.access(path.join(process.resourcesPath,'app-update.yml')).then(()=>true,()=>false);
-  updates=new Updates({config:updateConfig,version:VERSION,installed,logger,notify});
+  updates=new Updates({config:updateConfig,version:VERSION,installed,logger,notify,fetcher:(url,options)=>net.fetch(String(url),options)});
   const autoUpdate=async()=>{if(!settings.autoCheckUpdates||quitting)return;const result=await updates.check();if(result.state==='available'&&settings.autoDownloadUpdates)await updates.download();};
   updateTimer=setInterval(()=>void autoUpdate(),6*60*60*1000);updateTimer.unref();
-  const initialCheck=setTimeout(()=>void autoUpdate(),25000);initialCheck.unref();
+  const initialCheck=setTimeout(()=>void autoUpdate(),3000);initialCheck.unref();
   const runtime=app.isPackaged?path.join(process.resourcesPath,'runtime'):path.join(root,'runtime','windows');
   const preflight=async mode=>{
     if(mode!=='vpn')return;
@@ -87,7 +90,10 @@ app.whenReady().then(async()=>{
     if(command==='connect'&&process.env.ZPHONE_QA_NO_VPN==='1')throw Error('Подключения выключены на время проверки обновлений.');
     if(command==='snapshot')return snapshot();
     if(command==='openSupport'){if(!/^\w{5,32}$/.test(updateConfig.auth?.botUsername||''))throw Error('Адрес поддержки ещё не настроен.');await shell.openExternal('https://t.me/'+updateConfig.auth.botUsername);return {ok:true};}
-    if(command==='accountBegin'){const result=await account.begin();await shell.openExternal(result.url);notify();return snapshot();}
+    if(command==='accountBegin'||command==='accountOpenBot'){
+      const result=command==='accountBegin'?await account.begin():account.botLink();notify();
+      try{await shell.openExternal(result.url);}catch{throw Error('Заявка создана, но Telegram не открылся. Нажмите «Открыть бота» ещё раз или проверьте установленный браузер.');}return snapshot();
+    }
     if(command==='accountPoll'){await account.poll();notify();return snapshot();}
     if(command==='accountLogout'){await account.logout();notify();return snapshot();}
     if(command==='accountProfiles'){

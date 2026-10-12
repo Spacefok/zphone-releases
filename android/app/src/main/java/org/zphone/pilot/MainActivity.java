@@ -93,7 +93,9 @@ public class MainActivity extends Activity {
                                 reply(id,new JSONObject().put("ok",true),null);
                             }catch(Exception e){reply(id,null,"Не удалось открыть Telegram. Проверьте, установлен ли Telegram или браузер.");}});return;
                         case "accountBegin":
-                            String link=account.begin();runOnUiThread(()->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(link))));result=snapshot();break;
+                        case "accountOpenBot":
+                            String link=command.equals("accountBegin")?account.begin():account.botLink();notifyState();
+                            runOnUiThread(()->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(link)));reply(id,snapshot(),null);}catch(Exception e){reply(id,null,"Заявка создана, но Telegram не открылся. Нажмите «Открыть бота» ещё раз или проверьте установленный браузер.");}});return;
                         case "accountPoll":account.poll();result=snapshot();break;
                         case "accountLogout":account.logout();result=snapshot();break;
                         case "accountProfiles":

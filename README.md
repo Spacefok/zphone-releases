@@ -13,11 +13,13 @@ are not migrated or deleted automatically. See [test instructions](TESTING.md).
   AmneziaWG and Hysteria 2.
 - Application-based split tunneling, connection recovery and local diagnostics.
 - Windows tray and startup settings; Android foreground traffic notification.
-- Signed update metadata, explicit installation and Telegram device approval.
+- Signed update metadata, priority notices, explicit installation and Telegram device approval.
+- First-run account screen and optional installer desktop shortcut / launch actions.
 
 The test channel is separate from stable releases. Installation never starts
-while this application's VPN is active. Windows VPN mode requires an elevated
-launch. The client does not provide a persistent OS-enforced kill switch.
+while this application's VPN is active. Windows requests administrator rights
+at launch. Opt-in startup requests UAC too; it does not bypass Windows security.
+The client does not provide a persistent OS-enforced kill switch.
 
 ## Build
 
@@ -54,6 +56,9 @@ local until explicitly exported. The login service receives a device platform an
 Telegram identity through the bot, but not installed applications or traffic logs.
 Each new device requires administrator approval. Logging out revokes its delivery
 session; revoking already issued VPN credentials is a separate server operation.
+Windows login uses the system network stack. On connection errors it may resolve
+the login hostname through Cloudflare DNS over HTTPS, retaining normal TLS hostname
+and chain verification. No session tokens are sent to the DNS provider.
 
 ## License And Dependencies
 

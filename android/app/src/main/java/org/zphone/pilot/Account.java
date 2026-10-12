@@ -39,13 +39,34 @@ final class Account {
     private JSONObject call(String route,JSONObject data,String bearer) throws Exception {
         URL url=new URL(new URL(config().getString("baseUrl")),route);if(!url.getProtocol().equals("https")||url.getUserInfo()!=null)throw new Exception("Invalid access service");
         HttpURLConnection connection=(HttpURLConnection)url.openConnection();connection.setInstanceFollowRedirects(false);connection.setConnectTimeout(15000);connection.setReadTimeout(15000);connection.setRequestMethod("POST");connection.setDoOutput(true);connection.setRequestProperty("Content-Type","application/json");if(bearer!=null)connection.setRequestProperty("Authorization","Bearer "+bearer);
-        try{try(var stream=connection.getOutputStream()){stream.write(data.toString().getBytes(StandardCharsets.UTF_8));}if(connection.getResponseCode()!=200)throw new Exception("Сервис входа недоступен или заявка истекла.");try(var stream=connection.getInputStream()){return new JSONObject(new String(TunnelService.readBounded(stream,150000),StandardCharsets.UTF_8));}}finally{connection.disconnect();}
+        long started=android.os.SystemClock.elapsedRealtime();int status=0;String operation=route.substring(route.lastIndexOf('/')+1);
+        try{
+            try(var stream=connection.getOutputStream()){stream.write(data.toString().getBytes(StandardCharsets.UTF_8));}
+            status=connection.getResponseCode();
+            if(status!=200)throw new Exception(status==429?"Слишком много попыток входа. Подождите минуту.":"Сервис входа недоступен или заявка истекла.");
+            try(var stream=connection.getInputStream()){
+                JSONObject result=new JSONObject(new String(TunnelService.readBounded(stream,150000),StandardCharsets.UTF_8));
+                Diagnostics.get(context).write("account.request",new JSONObject().put("operation",operation).put("ok",true).put("durationMs",android.os.SystemClock.elapsedRealtime()-started));return result;
+            }
+        }catch(Exception error){
+            Diagnostics.get(context).write("account.request",new JSONObject().put("operation",operation).put("ok",false).put("status",status).put("errorType",error.getClass().getSimpleName()).put("durationMs",android.os.SystemClock.elapsedRealtime()-started));
+            if(error instanceof java.net.UnknownHostException)throw new Exception("Не удалось найти сервис входа через DNS. Попробуйте другую сеть.");
+            if(error instanceof javax.net.ssl.SSLException)throw new Exception("Не удалось проверить защищённое соединение. Проверьте дату и время устройства; не отключайте проверку сертификатов.");
+            if(error instanceof java.net.SocketTimeoutException)throw new Exception("Сервис входа не ответил вовремя. Попробуйте другую сеть и повторите вход.");
+            if(error instanceof java.io.IOException)throw new Exception("Не удалось связаться с сервисом входа. Попробуйте другую сеть или отправьте диагностику в поддержку.");
+            throw error;
+        }finally{connection.disconnect();}
     }
     synchronized String begin() throws Exception {
         String bot=config().optString("botUsername","");if(!bot.matches("[A-Za-z0-9_]{5,32}"))throw new Exception("Вход через бота ещё не настроен.");
+        if(pending!=null&&pending.getLong("expires")*1000>System.currentTimeMillis())return botLink();
         JSONObject result=call("/v1/device/start",new JSONObject().put("platform","android"),null);
         if(!result.getString("code").matches("[A-Za-z0-9_-]{32}")||!result.getString("secret").matches("[A-Za-z0-9_-]{43}")||!result.getString("number").matches("[0-9]{6}"))throw new Exception("Invalid login response");
-        pending=result;state="pending";message="";return "https://t.me/"+bot+"?start=login_"+result.getString("code");
+        pending=result;state="pending";message="";return botLink();
+    }
+    synchronized String botLink() throws Exception {
+        if(pending==null||pending.getLong("expires")*1000<=System.currentTimeMillis())throw new Exception("Заявка истекла. Начните вход заново.");
+        return "https://t.me/"+config().getString("botUsername")+"?start=login_"+pending.getString("code");
     }
     synchronized void poll() throws Exception {
         if(pending==null)return;String status=call("/v1/device/poll",pending,null).getString("state");

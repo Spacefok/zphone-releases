@@ -1,5 +1,5 @@
 import {validateSplit,splitRules} from './split-tunnel.mjs';
-export const VERSION='0.3.7';
+export const VERSION='0.3.8';
 export const PROTOCOLS=['TrustTunnel','Mieru','NaiveProxy','AmneziaWG','Hysteria2'];
 const host=/^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
 const str=(v,min,max)=>typeof v==='string'&&v.length>=min&&v.length<=max;
