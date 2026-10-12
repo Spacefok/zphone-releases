@@ -13,7 +13,7 @@ final class Protocols {
     private static boolean host(String s){return s.length()<=253&&s.matches("[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?");}
     private static boolean key(String s){return s.matches("[A-Za-z0-9+/]{43}=");}
     private static boolean ipv4(String s){if(!s.matches("[0-9]{1,3}(?:\\.[0-9]{1,3}){3}"))return false;for(String n:s.split("\\."))if(Integer.parseInt(n)>255)return false;return true;}
-    private static void check(boolean value) throws Exception {if(!value)throw new Exception("Некорректный тестовый доступ.");}
+    private static void check(boolean value) throws Exception {if(!value)throw new Exception("Некорректное подключение.");}
     static JSONObject validate(JSONObject p) throws Exception {
         String protocol=p.getString("protocol");check(ALL.contains(protocol)&&host(p.optString("server")));
         Object port=p.get("port");check(port instanceof Number&&((Number)port).doubleValue()==p.getInt("port")&&p.getInt("port")>0&&p.getInt("port")<=65535);

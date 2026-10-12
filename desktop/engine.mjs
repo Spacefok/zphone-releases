@@ -18,7 +18,7 @@ export class Engine {
     if(child?.pid&&child.exitCode===null&&child.signalCode===null){
       this.log('core.stop_requested',{pid:child.pid});
       const ended=new Promise(r=>child.once('exit',r));child.kill();await Promise.race([ended,sleep(2500)]);
-      if(child.exitCode===null&&child.signalCode===null)throw Error('Не удалось остановить тестовый процесс.');
+      if(child.exitCode===null&&child.signalCode===null)throw Error('Не удалось остановить процесс подключения.');
     }
     if(this.child===child)this.child=null;
     const helper=this.helper;
@@ -41,7 +41,7 @@ export class Engine {
     const operation=async()=>{
       await this.cleanup();
       const choices=candidates(profiles,selection.location,selection.protocol);
-      if(!choices.length)throw Error('Для выбранной локации и протокола нет тестового доступа.');
+      if(!choices.length)throw Error('Для выбранной локации и протокола нет доступа.');
       const order=choices;
       for(let index=0;index<order.length;index++){
         if(generation!==this.generation)return;
@@ -62,7 +62,7 @@ export class Engine {
           if(generation!==this.generation)return;
         }
       }
-      if(generation===this.generation)this.update({status:'error',port:null,error:'Не удалось получить ответ через выбранные тестовые подключения.'});
+      if(generation===this.generation)this.update({status:'error',port:null,error:'Не удалось получить ответ через выбранные подключения.'});
     };
     this.queue=this.queue.catch(()=>{}).then(operation).catch(error=>{this.log('connection.error',{error});if(generation===this.generation)this.update({status:'error',error:error.message,port:null});});
     return this.queue;

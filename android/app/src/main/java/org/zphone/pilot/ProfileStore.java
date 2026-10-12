@@ -41,12 +41,12 @@ final class ProfileStore {
     }
     static JSONObject validate(JSONObject value) throws Exception {
         JSONArray input=value.optJSONArray("profiles");
-        if(!"zphone-test-v1".equals(value.optString("format"))||!"test".equals(value.optString("scope"))||input==null||input.length()<1||input.length()>32)throw new Exception("Нужен файл тестовых доступов Zphone.");
+        if(!"zphone-test-v1".equals(value.optString("format"))||!"test".equals(value.optString("scope"))||input==null||input.length()<1||input.length()>32)throw new Exception("Нужен файл подключений Zphone.");
         JSONArray output=new JSONArray();HashSet<String> ids=new HashSet<>();
         for(int i=0;i<input.length();i++){
             JSONObject p=input.getJSONObject(i);String id=p.optString("id"),location=p.optString("location"),protocol=p.optString("protocol"),server=p.optString("server"),username=p.optString("username"),password=p.optString("password");
             int port=p.optInt("port",0);
-            if(!id.matches("[a-zA-Z0-9_-]{1,60}")||!ids.add(id)||!(location.equals("FIN")||location.equals("AMS")||location.equals("DEU")))throw new Exception("Некорректный тестовый доступ.");
+            if(!id.matches("[a-zA-Z0-9_-]{1,60}")||!ids.add(id)||!(location.equals("FIN")||location.equals("AMS")||location.equals("DEU")))throw new Exception("Некорректное подключение.");
             JSONObject clean=Protocols.validate(p);
             output.put(clean);
         }

@@ -1,11 +1,12 @@
-# Zphone Preview
+# Zphone
 
-Test VPN client for Windows x64 and Android arm64. Access requires an approved
+Early-access VPN client for Windows x64 and Android arm64. Access requires an approved
 private profile; downloading this application does not grant VPN access.
 
-Preview is installed separately from existing clients, with its own local
-storage, Android package and Windows startup entry. Current private connections
-are not migrated or deleted automatically. See [test instructions](TESTING.md).
+Version 0.5.1 introduces the Zphone name and icon. It updates the existing
+Preview installation in place and retains its local storage, Android signing
+identity and Windows startup entry. Other VPN clients and their connections
+are not changed. See [installation and verification instructions](TESTING.md).
 
 ## Features
 
@@ -34,13 +35,14 @@ node scripts/fetch-naive.mjs
 .\scripts\setup-android.ps1
 .\scripts\build-core.ps1
 npm test
+npm run build:icons
 npm run build
 npm run package:installer
 npm run sync:android
 .\scripts\build-preview-android.ps1
 ```
 
-The Android command above builds a release APK using a dedicated Preview key
+The Android command above builds a release APK using the existing application key
 kept outside the source tree. An existing APK
 with a different signing certificate cannot be replaced without a planned
 migration. Never uninstall an existing client without backing up its access.
@@ -70,6 +72,7 @@ with binary distributions. Native runtime sources must accompany public releases
 - NaiveProxy v154.0.8037.49-4, BSD-3-Clause.
 - hev-socks5-tunnel 2.18.0, MIT.
 - Electron, electron-updater, adm-zip: MIT; Lucide: ISC.
+- Build-time image processing: sharp, Apache-2.0.
 - Country images: Twitter Twemoji 14.0.2, CC-BY 4.0.
 
 Dependencies retain their own copyright notices. See `licenses/`, the lockfile,

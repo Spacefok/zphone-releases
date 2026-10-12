@@ -22,6 +22,14 @@ test('missing tray icon does not intercept window close',()=>{
   const window=new EventEmitter();assert.throws(()=>createTray({nativeImage:{createFromPath:()=>({isEmpty:()=>true})},window}),/icon unavailable/);assert.equal(window.listenerCount('close'),0);
 });
 
+test('tray distinguishes a local proxy from full VPN without pilot branding',()=>{
+  const f=fixture();try{
+    f.setState({status:'connected',mode:'isolated',route:{location:'FIN',protocol:'AmneziaWG'}});
+    assert.equal(f.item.tooltip,'Zphone · Прокси подключён · FIN · AmneziaWG');
+    assert.match(f.item.menu.find(i=>i.id==='open').label,/^Открыть Zphone$/);
+  }finally{f.controller.dispose();}
+});
+
 test('tray initialization failure restores normal window behavior',()=>{
   const window=new EventEmitter();let destroyed=false;
   class Tray extends EventEmitter{setToolTip(){}destroy(){destroyed=true;}}

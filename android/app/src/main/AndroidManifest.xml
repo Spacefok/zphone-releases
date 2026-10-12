@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <queries><intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent></queries>
-    <application android:label="Zphone Preview" android:allowBackup="false" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:networkSecurityConfig="@xml/network_security_config" android:icon="@android:drawable/ic_lock_lock">
+    <application android:label="Zphone" android:allowBackup="false" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:networkSecurityConfig="@xml/network_security_config" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher">
         <receiver android:name=".UpdateReceiver" android:exported="false" />
         <service android:name=".UpdateJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true" />
         <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden|uiMode">
@@ -15,7 +15,7 @@
         </activity>
         <service android:name=".TunnelService" android:permission="android.permission.BIND_VPN_SERVICE" android:exported="false" android:foregroundServiceType="specialUse">
             <intent-filter><action android:name="android.net.VpnService" /></intent-filter>
-            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User initiated VPN tunnel for private test profiles" />
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User initiated VPN connection" />
         </service>
     </application>
 </manifest>

@@ -72,7 +72,7 @@ public class TunnelService extends VpnService {
         }catch(Exception ignored){}
     }
     @Override public void onCreate(){super.onCreate();instance=this;logger=Diagnostics.get(this);
-        NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);manager.createNotificationChannel(new NotificationChannel("vpn","Тестовое подключение",NotificationManager.IMPORTANCE_LOW));
+        NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);manager.createNotificationChannel(new NotificationChannel("vpn","VPN-подключение",NotificationManager.IMPORTANCE_LOW));
     }
     @Override public int onStartCommand(Intent intent,int flags,int startId){
         if(intent!=null&&ACTION_STOP.equals(intent.getAction())){logger.write("notification.disconnect",new JSONObject());disconnect();return START_NOT_STICKY;}
@@ -92,7 +92,7 @@ public class TunnelService extends VpnService {
         String total="↑ "+TunnelTraffic.bytes(totals.uploaded)+"   ↓ "+TunnelTraffic.bytes(totals.downloaded);
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_ACTIVITY_CLEAR_TOP),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
         PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,TunnelService.class).setAction(ACTION_STOP),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
-        Notification.Builder builder=new Notification.Builder(this,"vpn").setSmallIcon(android.R.drawable.ic_lock_lock).setContentTitle(notificationRoute.isEmpty()?"Zphone Preview":notificationRoute)
+        Notification.Builder builder=new Notification.Builder(this,"vpn").setSmallIcon(R.drawable.ic_notification).setContentTitle(notificationRoute.isEmpty()?"Zphone":notificationRoute)
             .setContentText(connected?rates:label).setSubText(total).setStyle(new Notification.BigTextStyle().bigText(label+"\n"+(connected?rates+"\n":"")+"Всего: "+total))
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setCategory(Notification.CATEGORY_SERVICE).setVisibility(Notification.VISIBILITY_PRIVATE)
             .addAction(new Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel,"Отключить",stop).build());
@@ -106,13 +106,13 @@ public class TunnelService extends VpnService {
         try{
             cleanup();if(token!=generation.get())return;
             logNetwork();
-            if(!restoring){JSONObject bundle=new ProfileStore(this).read();if(bundle==null)throw new Exception("Тестовые доступы отсутствуют.");
+            if(!restoring){JSONObject bundle=new ProfileStore(this).read();if(bundle==null)throw new Exception("Подключения отсутствуют.");
             var prefs=getSharedPreferences("settings",MODE_PRIVATE);String location=prefs.getString("location","auto"),protocol=prefs.getString("protocol","auto");
             JSONArray profiles=bundle.getJSONArray("profiles");choices=new ArrayList<>();
             for(int i=0;i<profiles.length();i++){JSONObject p=profiles.getJSONObject(i);if((location.equals("auto")||location.equals(p.getString("location")))&&(protocol.equals("auto")||protocol.equals(p.getString("protocol"))))choices.add(p);}
             choices.sort(Comparator.comparingInt(p->Protocols.ALL.indexOf(p.optString("protocol"))));
             }else choices.sort(Comparator.comparingInt(p->p.optString("id").equals(lastProfile)?0:1));
-            if(choices.isEmpty())throw new Exception("Нет тестового доступа для выбранного протокола и локации.");
+            if(choices.isEmpty())throw new Exception("Нет доступа для выбранного протокола и локации.");
             for(int attempt=0;attempt<(restoring?retryDelays.length:1);attempt++){
             if(restoring){
                 update("recovering",null,null,null);logger.write("recovery.wait",new JSONObject().put("attempt",attempt+1).put("delayMs",retryDelays[attempt]));
@@ -141,7 +141,7 @@ public class TunnelService extends VpnService {
             }
             }
             if(restoring)throw new Exception("Не удалось восстановить соединение после пяти попыток. Повторите подключение.");
-            String reason=stage.equals("core")?"Не удалось запустить сетевое ядро.":stage.equals("android-tunnel")?"Не удалось запустить VPN Android.":"Тестовый сервер не ответил в этой сети.";
+            String reason=stage.equals("core")?"Не удалось запустить сетевое ядро.":stage.equals("android-tunnel")?"Не удалось запустить VPN Android.":"Сервер не ответил в этой сети.";
             throw new Exception(reason+" Ручной выбор протокола сохранён.");
         }catch(Exception error){if(token!=generation.get())return;logger.write(restoring?"recovery.failed":"connection.failed",object("errorType",error.getClass().getSimpleName()));update("error",null,null,error.getMessage());try{cleanup();}catch(Exception e){logger.write("cleanup.failed",object("errorType",e.getClass().getSimpleName()));}endNotification();stopSelf();}
     }
@@ -215,7 +215,7 @@ public class TunnelService extends VpnService {
         }catch(Exception error){logger.write("network.snapshot_failed",object("errorType",error.getClass().getSimpleName()));}
     }
     private void startTunnel() throws Exception {
-        Builder builder=new Builder().setSession("Zphone Preview").setMtu(1400).addAddress("198.18.0.1",30).addAddress("fd86:ea04:1111::1",126).addRoute("0.0.0.0",0).addRoute("::",0).addDnsServer("1.1.1.1");
+        Builder builder=new Builder().setSession("Zphone").setMtu(1400).addAddress("198.18.0.1",30).addAddress("fd86:ea04:1111::1",126).addRoute("0.0.0.0",0).addRoute("::",0).addDnsServer("1.1.1.1");
         SplitTunnel.apply(this,builder);builder.setBlocking(false);tunnel=builder.establish();if(tunnel==null)throw new Exception("VPN permission revoked");
         String config="tunnel:\n  mtu: 1400\n  ipv4: 198.18.0.1\n  ipv6: 'fd86:ea04:1111::1'\nsocks5:\n  address: 127.0.0.1\n  port: "+port+"\n  udp: udp\nmisc:\n  log-level: error\n  log-file: /dev/null\n";
         tunnelFile=new File(getFilesDir(),"session/tunnel.yml");Files.write(tunnelFile.toPath(),config.getBytes(StandardCharsets.UTF_8));
@@ -236,7 +236,7 @@ public class TunnelService extends VpnService {
             }
         }
     },"zphone-health").start();}
-    static JSONObject diagnose(){try{TunnelService service=instance;if(service==null||!connection.optString("status").equals("connected"))throw new Exception();return new JSONObject().put("ok",true).put("latency",service.health());}catch(Exception e){try{return new JSONObject().put("ok",false).put("message","Ответ через тестовое соединение не получен.");}catch(Exception ignored){return object("ok",false);}}}
+    static JSONObject diagnose(){try{TunnelService service=instance;if(service==null||!connection.optString("status").equals("connected"))throw new Exception();return new JSONObject().put("ok",true).put("latency",service.health());}catch(Exception e){try{return new JSONObject().put("ok",false).put("message","Ответ через соединение не получен.");}catch(Exception ignored){return object("ok",false);}}}
     private void cleanup(){
         boolean stopTunnel;
         synchronized(traffic){stopTunnel=tunnelStarted;if(tunnelStarted)sampleTraffic();tunnelStarted=false;traffic.pause();}
@@ -245,7 +245,7 @@ public class TunnelService extends VpnService {
         Exception failure=null;
         if(core!=null){try{core.stop();core=null;}catch(Exception e){failure=e;}}
         if(naive!=null){try{naive.stop();naive=null;}catch(Exception e){failure=e;}}
-        if(failure!=null)throw new IllegalStateException("Не удалось остановить тестовое ядро.",failure);
+        if(failure!=null)throw new IllegalStateException("Не удалось остановить сетевое ядро.",failure);
         if(naiveFile!=null){naiveFile.delete();naiveFile=null;}
         if(configFile!=null){configFile.delete();configFile=null;}if(tunnelFile!=null){tunnelFile.delete();tunnelFile=null;}
         if(coreLog!=null){coreLog.delete();coreLog=null;}

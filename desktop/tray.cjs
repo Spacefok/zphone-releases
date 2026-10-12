@@ -6,12 +6,12 @@ function createTray({Tray,Menu,nativeImage,window,iconPath,getState,isQuitting,d
   const update=()=>{
     if(disposed)return;
     const state=getState(),status=state.status||'off';
-    const labels={off:'Не подключено',connecting:'Подключаемся',checking:'Проверяем интернет',recovering:'Восстанавливаем соединение',connected:state.mode==='isolated'?'Тест подключён':'Подключено',disconnecting:'Отключаемся',error:'Ошибка подключения'};
+    const labels={off:'Не подключено',connecting:'Подключаемся',checking:'Проверяем интернет',recovering:'Восстанавливаем соединение',connected:state.mode==='isolated'?'Прокси подключён':'Подключено',disconnecting:'Отключаемся',error:'Ошибка подключения'};
     const route=state.route?`${state.route.location} · ${state.route.protocol}`:'';
     const title=[labels[status]||labels.off,route].filter(Boolean).join(' · ');
     const key=title+stopping;if(key===lastMenu)return;lastMenu=key;
     const canStop=['connecting','checking','recovering','connected'].includes(status)&&!stopping;
-    tray.setToolTip('Zphone Preview · '+title);
+    tray.setToolTip('Zphone · '+title);
     tray.setContextMenu(Menu.buildFromTemplate([
       {id:'status',label:title,enabled:false},{type:'separator'},
       {id:'open',label:'Открыть Zphone',click:show},

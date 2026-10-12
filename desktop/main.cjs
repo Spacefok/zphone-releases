@@ -6,8 +6,8 @@ const path=require('node:path');
 const os=require('node:os');
 let window,engine,logger,networkTimer,updateTimer,trayController,bundle=null,settings={location:'auto',protocol:'auto',theme:'system',mode:'isolated',startInTray:false,autoCheckUpdates:true,autoDownloadUpdates:false,split:{mode:'all',apps:[]}},quitting=false,showRequested=false;
 const root=path.resolve(__dirname,'..');
-const build='windows-20261012.14';
-app.setName('Zphone Preview');
+const build='windows-20261012.15';
+app.setName('Zphone');
 app.setPath('userData',path.join(app.getPath('appData'),'ZphonePreview'));
 if(!app.requestSingleInstanceLock()){app.quit();}
 else {
@@ -67,14 +67,14 @@ app.whenReady().then(async()=>{
     const check=await windowsNetworkStatus();
     logger.write('connection.preflight',{admin:check.admin,conflicts:check.conflicts.map(a=>a.Name),routedInterfaces:check.routedInterfaces});
     if(check.conflicts.length)throw Object.assign(Error('Обнаружен другой VPN. Он не будет изменён. Отключите его самостоятельно перед повторным подключением.'),{code:'VPN_CONFLICT'});
-    if(!check.admin)throw Object.assign(Error('Для VPN-режима запустите Zphone Preview от имени администратора.'),{code:'ADMIN_REQUIRED'});
+    if(!check.admin)throw Object.assign(Error('Для VPN-режима запустите Zphone от имени администратора.'),{code:'ADMIN_REQUIRED'});
   };
   engine=new Engine({binary:path.join(runtime,'mihomo.exe'),directory:path.join(storage,'session'),onState:notify,logger,beforeReconnect:preflight});
   powerMonitor.on('resume',()=>{logger.write('system.resume');void engine.recover('system.resume');});
   void captureNetwork('app.start');
   networkTimer=setInterval(()=>{if(engine.active){void captureNetwork('interval');void engine.api('/connections',3000).then(data=>logger.write('traffic.totals',{uploadBytes:data.uploadTotal,downloadBytes:data.downloadTotal,connections:data.connections?.length})).catch(error=>logger.write('traffic.error',{error}));}},30000);
   networkTimer.unref();
-  window=new BrowserWindow({width:960,height:810,minWidth:380,minHeight:620,title:'Zphone Preview',backgroundColor:'#fafbf9',show:false,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+  window=new BrowserWindow({width:960,height:810,minWidth:380,minHeight:620,title:'Zphone',icon:path.join(root,'dist','icon.png'),backgroundColor:'#fafbf9',show:false,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   window.setMenuBarVisibility(false);
   window.on('focus',notify);
   try{trayController=createTray({Tray,Menu,nativeImage,window,iconPath:path.join(root,'dist','tray.png'),getState:()=>engine.state,isQuitting:()=>quitting,disconnect:async()=>{await engine.stop();await captureNetwork('tray.disconnect',true);},quit:()=>app.quit(),logger});}
@@ -97,7 +97,7 @@ app.whenReady().then(async()=>{
     if(command==='accountPoll'){await account.poll();notify();return snapshot();}
     if(command==='accountLogout'){await account.logout();notify();return snapshot();}
     if(command==='accountProfiles'){
-      if(busy())throw Error('Сначала отключите тестовое соединение.');
+      if(busy())throw Error('Сначала отключите соединение.');
       const response=await account.profiles();if(response.state!=='ready')throw Error('Доступ одобрен, подключения ещё готовятся.');
       const imported=validateBundle(response.bundle);
       if(!safeStorage.isEncryptionAvailable())throw Error('Защищённое хранилище недоступно.');
@@ -113,13 +113,13 @@ app.whenReady().then(async()=>{
     if(command==='markIssue'){logger.write('user.mark',{connection:engine.state,selection:{location:settings.location,protocol:settings.protocol,mode:settings.mode}});await captureNetwork('user.mark',true);return {ok:logger.available};}
     if(command==='listApps')return {apps:await runningApplications()};
     if(command==='pickApp'){
-      if(busy())throw Error('Сначала отключите тестовое соединение.');
+      if(busy())throw Error('Сначала отключите соединение.');
       const picked=await dialog.showOpenDialog(window,{title:'Приложение для раздельного туннелирования',properties:['openFile'],filters:[{name:'Windows',extensions:['exe']}]});
       return {app:picked.canceled?null:applicationItem(picked.filePaths[0])};
     }
     if(command==='import'){
-      if(busy())throw Error('Сначала отключите тестовое соединение.');
-      const picked=await dialog.showOpenDialog(window,{title:'Тестовые доступы Zphone',properties:['openFile'],filters:[{name:'Zphone',extensions:['zphone','json']}]});
+      if(busy())throw Error('Сначала отключите соединение.');
+      const picked=await dialog.showOpenDialog(window,{title:'Подключения Zphone',properties:['openFile'],filters:[{name:'Zphone',extensions:['zphone','json']}]});
       if(picked.canceled)return snapshot();
       const stat=await fs.stat(picked.filePaths[0]);if(stat.size>131072)throw Error('Файл слишком большой.');
       const imported=validateBundle(JSON.parse(await fs.readFile(picked.filePaths[0],'utf8')));
@@ -129,7 +129,7 @@ app.whenReady().then(async()=>{
     if(command==='settings'){
       if(!data||typeof data!=='object')throw Error('Некорректные настройки.');
       for(const key of ['startWithWindows','startInTray','autoCheckUpdates','autoDownloadUpdates'])if(data[key]!==undefined&&typeof data[key]!=='boolean')throw Error('Некорректная настройка.');
-      if(busy()&&['location','protocol','mode','split'].some(key=>data[key]!==undefined))throw Error('Сначала отключите тестовое соединение.');
+      if(busy()&&['location','protocol','mode','split'].some(key=>data[key]!==undefined))throw Error('Сначала отключите соединение.');
       const split=data.split===undefined?settings.split:validateSplit(data.split);
       const next={...settings,split};
       if(data.location!==undefined&&['auto','FIN','AMS','DEU'].includes(data.location))next.location=data.location;
@@ -149,17 +149,17 @@ app.whenReady().then(async()=>{
       if(busy())return snapshot();
       logger.write('user.connect',{location:settings.location,protocol:settings.protocol,mode:settings.mode});
       await captureNetwork('before.connect',true);
-      if(!bundle)throw Error('Сначала импортируйте тестовый доступ.');
+      if(!bundle)throw Error('Сначала добавьте подключение.');
       if(settings.mode==='vpn'&&settings.split.mode==='include'&&!settings.split.apps.length)throw Error('Выберите хотя бы одно приложение для VPN.');
       await preflight(settings.mode);
       engine.start(bundle.profiles,{...settings},settings.mode);return snapshot();
     }
     if(command==='disconnect'){logger.write('user.disconnect');await engine.stop();await captureNetwork('after.disconnect',true);return snapshot();}
-    if(command==='diagnose'){logger.write('user.diagnose');await captureNetwork('user.diagnose');try{return {ok:true,latency:await engine.check()};}catch(error){logger.write('diagnose.error',{error});return {ok:false,message:'Ответ через тестовое соединение не получен.'};}}
+    if(command==='diagnose'){logger.write('user.diagnose');await captureNetwork('user.diagnose');try{return {ok:true,latency:await engine.check()};}catch(error){logger.write('diagnose.error',{error});return {ok:false,message:'Ответ через соединение не получен.'};}}
     if(command==='testPage'){
-      if(engine.state.status!=='connected'||!engine.state.port)throw Error('Сначала подключите тестовый доступ.');
+      if(engine.state.status!=='connected'||!engine.state.port)throw Error('Сначала включите подключение.');
       const isolated=session.fromPartition('zphone-test-'+Date.now());await isolated.setProxy({proxyRules:`http=127.0.0.1:${engine.state.port};https=127.0.0.1:${engine.state.port}`,proxyBypassRules:'<-loopback>'});
-      const test=new BrowserWindow({width:900,height:720,title:'Проверка Zphone',webPreferences:{session:isolated,nodeIntegration:false,contextIsolation:true,sandbox:true}});test.setMenuBarVisibility(false);
+      const test=new BrowserWindow({width:900,height:720,title:'Проверка Zphone',icon:path.join(root,'dist','icon.png'),webPreferences:{session:isolated,nodeIntegration:false,contextIsolation:true,sandbox:true}});test.setMenuBarVisibility(false);
       test.webContents.setWindowOpenHandler(()=>({action:'deny'}));test.webContents.on('will-navigate',(event,url)=>{if(!url.startsWith('https://'))event.preventDefault();});
       await test.loadURL('https://www.cloudflare.com/cdn-cgi/trace');logger.write('test_page.loaded');return {ok:true};
     }
@@ -172,7 +172,7 @@ app.whenReady().then(async()=>{
     }catch(error){logger.write('command.error',{command,error});throw error;}
   });
   await window.loadFile(entry);if(!quitting){const hidden=shouldStartHidden(settings,trayController)&&!showRequested;if(!hidden)window.show();logger.write('startup.ready',{hidden});}
-}).catch(error=>{if(quitting)return;logger?.write('app.error',{error});logger?.flush();dialog.showErrorBox('Zphone Preview',error.message);app.quit();});
+}).catch(error=>{if(quitting)return;logger?.write('app.error',{error});logger?.flush();dialog.showErrorBox('Zphone',error.message);app.quit();});
 app.on('window-all-closed',()=>app.quit());
 app.on('before-quit',event=>{if(quitting)return;event.preventDefault();quitting=true;clearInterval(networkTimer);logger?.write('app.quit_requested');Promise.resolve(engine?.stop()).catch(error=>logger?.write('shutdown.error',{error})).finally(()=>{trayController?.dispose();logger?.write('app.quit');logger?.flush();app.quit();});});
 }

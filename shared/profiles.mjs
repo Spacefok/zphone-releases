@@ -1,5 +1,5 @@
 import {validateSplit,splitRules} from './split-tunnel.mjs';
-export const VERSION='0.4.2';
+export const VERSION='0.5.1';
 export const PROTOCOLS=['TrustTunnel','Mieru','NaiveProxy','AmneziaWG','Hysteria2'];
 const host=/^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
 const str=(v,min,max)=>typeof v==='string'&&v.length>=min&&v.length<=max;
@@ -19,7 +19,7 @@ export function validateAwg(input){
   return output;
 }
 export function validateBundle(value) {
-  if(!value||value.format!=='zphone-test-v1'||value.scope!=='test'||!Array.isArray(value.profiles)||!value.profiles.length||value.profiles.length>32)throw Error('Нужен файл тестовых доступов Zphone.');
+  if(!value||value.format!=='zphone-test-v1'||value.scope!=='test'||!Array.isArray(value.profiles)||!value.profiles.length||value.profiles.length>32)throw Error('Нужен файл подключений Zphone.');
   const seen=new Set();
   const profiles=value.profiles.map(p=>{
     if(!p||!str(p.id,1,60)||!/^[a-zA-Z0-9_-]+$/.test(p.id)||seen.has(p.id))throw Error('Некорректный или повторяющийся идентификатор.');

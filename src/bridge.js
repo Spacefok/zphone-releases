@@ -17,6 +17,6 @@ export function request(command,data={}){
     pending.set(id,{resolve,reject,timer});window.Android.request(id,command,JSON.stringify(data));
   });
   if(command==='snapshot')return Promise.resolve({version:VERSION,platform:'preview',settings:{theme:'system',location:'auto',protocol:'auto',mode:'isolated',split:{mode:'all',apps:[]}},profiles:[],connection:{status:'off'}});
-  return Promise.reject(new Error('Это предварительный просмотр. Подключение доступно в приложении.'));
+  return Promise.reject(new Error('Подключение недоступно в браузере. Откройте приложение Zphone.'));
 }
 export function subscribe(callback){if(window.zphone)return window.zphone.subscribe(callback);listeners.add(callback);return()=>listeners.delete(callback);}

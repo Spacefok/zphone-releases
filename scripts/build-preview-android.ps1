@@ -27,7 +27,7 @@ try {
     Push-Location (Join-Path $root 'android')
     try { & $gradle --no-daemon assembleRelease; if($LASTEXITCODE){throw 'Release build failed.'} } finally { Pop-Location }
     $version=(Get-Content (Join-Path $root 'package.json') -Raw | ConvertFrom-Json).version
-    Copy-Item -LiteralPath (Join-Path $root 'android\app\build\outputs\apk\release\app-release.apk') -Destination (Join-Path $root "release\android\Zphone-Preview-$version-arm64.apk")
+    Copy-Item -LiteralPath (Join-Path $root 'android\app\build\outputs\apk\release\app-release.apk') -Destination (Join-Path $root "release\android\Zphone-$version-arm64.apk")
 } finally {
     foreach($name in $previous.Keys){[Environment]::SetEnvironmentVariable($name,$previous[$name],'Process')}
 }

@@ -1,8 +1,8 @@
 {
   "name": "zphone-preview",
-  "version": "0.4.2",
+  "version": "0.5.1",
   "private": true,
-  "description": "Zphone test client for Android and Windows",
+  "description": "Zphone VPN client for Android and Windows",
   "author": "Zphone contributors",
   "license": "GPL-3.0-only",
   "type": "module",
@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
+    "build:icons": "node scripts/build-icons.mjs",
     "start": "electron .",
     "test": "node --test test/*.test.mjs",
     "runtime": "node scripts/fetch-runtime.mjs",
@@ -25,6 +26,7 @@
     "@iarna/toml": "2.2.5",
     "electron": "44.7.0",
     "electron-builder": "26.15.3",
+    "sharp": "0.35.5",
     "vite": "8.3.4"
   }
 }

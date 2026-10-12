@@ -38,7 +38,7 @@ export class Updates {
   }
   async check(){
     if(this.running)return this.snapshot();
-    if(!this.config?.publicKey)return this.set({state:'unconfigured',message:'Тестовый канал ещё не опубликован.'});
+    if(!this.config?.publicKey)return this.set({state:'unconfigured',message:'Источник обновлений ещё не настроен.'});
     if(['ready','installing'].includes(this.state.state))return this.snapshot();
     this.running=true;this.set({state:'checking',message:''});
     try{

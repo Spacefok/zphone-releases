@@ -27,6 +27,6 @@ final class ChildProcess {
         if(!process.isAlive())return;
         process.destroy();if(process.waitFor(2,TimeUnit.SECONDS))return;
         try{Os.kill(pid,OsConstants.SIGKILL);}catch(ErrnoException e){if(e.errno!=OsConstants.ESRCH)throw e;}
-        if(!process.waitFor(2,TimeUnit.SECONDS))throw new IOException("Test child did not stop");
+        if(!process.waitFor(2,TimeUnit.SECONDS))throw new IOException("Child process did not stop");
     }
 }

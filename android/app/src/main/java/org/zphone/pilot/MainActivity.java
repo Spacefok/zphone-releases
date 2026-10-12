@@ -66,7 +66,7 @@ public class MainActivity extends Activity {
             if(UpdateCheck.snapshot().optString("state").equals("installing"))throw new Exception("Завершите или отмените установку обновления.");
             if(TunnelService.running()){reply(id,snapshot(),null);return;}
             if(anotherVpn())throw new Exception("Сейчас работает другой VPN. Он не будет отключён. Сначала отключите его самостоятельно.");
-            if(new ProfileStore(this).read()==null)throw new Exception("Сначала импортируйте тестовый доступ.");
+            if(new ProfileStore(this).read()==null)throw new Exception("Сначала добавьте подключение.");
             JSONObject split=SplitTunnel.read(this);if(split.getString("mode").equals("include")&&split.getJSONArray("apps").length()==0)throw new Exception("Выберите хотя бы одно приложение для VPN.");
             if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED&&!getSharedPreferences("settings",MODE_PRIVATE).getBoolean("notificationPermissionAsked",false)){
                 if(notificationId!=-1)throw new Exception("Подтвердите запрос уведомлений.");
@@ -99,7 +99,7 @@ public class MainActivity extends Activity {
                         case "accountPoll":account.poll();result=snapshot();break;
                         case "accountLogout":account.logout();result=snapshot();break;
                         case "accountProfiles":
-                            if(TunnelService.running())throw new Exception("Сначала отключите тестовое соединение.");
+                            if(TunnelService.running())throw new Exception("Сначала отключите соединение.");
                             new ProfileStore(MainActivity.this).write(account.profiles());result=snapshot();break;
                         case "listApps":result=new JSONObject().put("apps",SplitTunnel.apps(MainActivity.this));break;
                         case "connect":Diagnostics.get(MainActivity.this).write("user.connect",settings());connect(id);return;
@@ -108,10 +108,10 @@ public class MainActivity extends Activity {
                         case "exportDiagnostics":
                             runOnUiThread(()->{if(exportId!=-1){reply(id,null,"Экспорт уже открыт.");return;}exportId=id;try{Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/zip").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE,Diagnostics.filename());startActivityForResult(save,103);}catch(Exception e){exportId=-1;reply(id,null,"Не удалось открыть сохранение файла.");}});return;
                         case "import":
-                            if(TunnelService.running())throw new Exception("Сначала отключите тестовое соединение.");
+                            if(TunnelService.running())throw new Exception("Сначала отключите соединение.");
                             runOnUiThread(()->{importId=id;Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(pick,102);});return;
                         case "settings":
-                            if(TunnelService.running()&&(arg.has("location")||arg.has("protocol")||arg.has("split")))throw new Exception("Сначала отключите тестовое соединение.");
+                            if(TunnelService.running()&&(arg.has("location")||arg.has("protocol")||arg.has("split")))throw new Exception("Сначала отключите соединение.");
                             var editor=getSharedPreferences("settings",MODE_PRIVATE).edit();
                             for(String key:new String[]{"autoCheckUpdates","autoDownloadUpdates","updateWifiOnly"})if(arg.has(key)){if(!(arg.get(key) instanceof Boolean))throw new Exception("Некорректная настройка.");editor.putBoolean(key,arg.getBoolean(key));}
                             if(arg.has("split"))editor.putString("split",SplitTunnel.validate(arg.getJSONObject("split")).toString());
@@ -147,7 +147,7 @@ public class MainActivity extends Activity {
             worker.execute(()->{try(InputStream stream=getContentResolver().openInputStream(data.getData())){
                 byte[] bytes=TunnelService.readBounded(stream,131072);
                 new ProfileStore(this).write(new JSONObject(new String(bytes,StandardCharsets.UTF_8)));reply(id,snapshot(),null);
-            }catch(Exception e){reply(id,null,"Не удалось импортировать тестовый доступ: "+e.getMessage());}});
+            }catch(Exception e){reply(id,null,"Не удалось импортировать подключение: "+e.getMessage());}});
         }
     }
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){

@@ -7,8 +7,8 @@
 
 LangString ZphoneDesktop 1033 "Add a shortcut to the desktop"
 LangString ZphoneDesktop 1049 "Добавить ярлык на рабочий стол"
-LangString ZphoneRun 1033 "Launch Zphone Preview"
-LangString ZphoneRun 1049 "Запустить Zphone Preview"
+LangString ZphoneRun 1033 "Launch Zphone"
+LangString ZphoneRun 1049 "Запустить Zphone"
 
 !macro customFinishPage
   Function ZphoneRunAfterFinish

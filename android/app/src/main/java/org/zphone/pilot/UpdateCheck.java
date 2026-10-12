@@ -52,7 +52,7 @@ final class UpdateCheck {
     static JSONObject check(Context context) throws Exception {
         synchronized(UpdateCheck.class){if(working||status.optString("state").equals("ready")||status.optString("state").equals("installing"))return snapshot();working=true;}
         try{
-            JSONObject cfg=config(context);if(cfg.isNull("publicKey"))return state("unconfigured","Тестовый канал ещё не опубликован.");
+            JSONObject cfg=config(context);if(cfg.isNull("publicKey"))return state("unconfigured","Источник обновлений ещё не настроен.");
             String repo=cfg.getString("repository"),channel=cfg.getString("channel");if(!repo.matches("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")||!channel.matches("test|stable"))throw new Exception("Invalid channel");
             state("checking","");HttpURLConnection c=open(new URL("https://github.com/"+repo+"/releases/download/"+channel+"/release.json"));
             JSONObject signed;try(var stream=c.getInputStream()){signed=new JSONObject(new String(TunnelService.readBounded(stream,65536),StandardCharsets.UTF_8));}finally{c.disconnect();}
