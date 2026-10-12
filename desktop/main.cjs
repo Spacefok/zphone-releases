@@ -6,7 +6,7 @@ const path=require('node:path');
 const os=require('node:os');
 let window,engine,logger,networkTimer,updateTimer,trayController,bundle=null,settings={location:'auto',protocol:'auto',theme:'system',mode:'isolated',startInTray:false,autoCheckUpdates:true,autoDownloadUpdates:false,split:{mode:'all',apps:[]}},quitting=false,showRequested=false;
 const root=path.resolve(__dirname,'..');
-const build='windows-20261012.10';
+const build='windows-20261012.11';
 app.setName('Zphone Preview');
 app.setPath('userData',path.join(app.getPath('appData'),'ZphonePreview'));
 if(!app.requestSingleInstanceLock()){app.quit();}
