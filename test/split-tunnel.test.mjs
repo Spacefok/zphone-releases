@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {validateSplit,splitRules} from '../shared/split-tunnel.mjs';
 import {coreConfig} from '../shared/profiles.mjs';
 const app={id:'C:\\Program Files (x86)\\Example\\Browser.exe',name:'Browser'};
-const profile={id:'test',location:'FIN',protocol:'Mieru',server:'192.0.2.1',port:443,username:'test',password:'test-password'};
+const profile={id:'test',location:'FIN',protocol:'Mieru',server:'192.0.2.1',port:443,username:'test',password:'test-password',ipv6:true};
 const options={port:19000,apiPort:19001,secret:'s'.repeat(24),mode:'vpn'};
 
 test('split settings default to all, deduplicate Windows paths and reject rule injection',()=>{

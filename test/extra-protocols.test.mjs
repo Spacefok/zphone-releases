@@ -28,7 +28,7 @@ test('Hysteria2 accepts explicit Gecko without changing existing Salamander prof
 });
 test('NaiveProxy uses only its local helper, excludes only the endpoint and rejects UDP',()=>{
   const p=validate(naive),c=config(p);assert.equal(c.proxies[0].type,'socks5');assert.equal(c.proxies[0].udp,false);assert.equal(c.proxies[0].password,undefined);
-  assert.deepEqual(c.tun['route-exclude-address'],[base.server+'/32']);assert.deepEqual(c.rules,['NETWORK,udp,REJECT','MATCH,Zphone-Test']);
+  assert.deepEqual(c.tun['route-exclude-address'],[base.server+'/32']);assert.deepEqual(c.rules,['IP-CIDR6,::/0,REJECT,no-resolve','NETWORK,udp,REJECT','MATCH,Zphone-Test']);
   const n=naiveConfig(p,12003);assert.equal(n.listen,'socks://127.0.0.1:12003');assert(n.proxy.includes('test%40user:test%3A%2B%2Fpass@'));assert(!Object.keys(n).some(k=>k.includes('ignore-certificate')));
   assert.throws(()=>coreConfig(p,{port:12001,apiPort:12002,secret:'x'.repeat(24)}));
   assert.throws(()=>validate({...naive,server:'arbitrary.example'}));assert.throws(()=>validate({...naive,fingerprint:'a'.repeat(64)}));

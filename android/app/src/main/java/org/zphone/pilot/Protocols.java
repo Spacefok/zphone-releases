@@ -9,7 +9,7 @@ import static java.util.Arrays.asList;
 
 final class Protocols {
     static final List<String> ALL=asList("TrustTunnel","Mieru","NaiveProxy","AmneziaWG","Hysteria2");
-    static boolean supportsIpv6(JSONObject profile){return !profile.optString("protocol").equals("AmneziaWG");}
+    static boolean supportsIpv6(JSONObject profile){return Boolean.TRUE.equals(profile.opt("ipv6"))&&!profile.optString("protocol").equals("AmneziaWG");}
     private static boolean host(String s){return s.length()<=253&&s.matches("[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?");}
     private static boolean key(String s){return s.matches("[A-Za-z0-9+/]{43}=");}
     private static boolean ipv4(String s){if(!s.matches("[0-9]{1,3}(?:\\.[0-9]{1,3}){3}"))return false;for(String n:s.split("\\."))if(Integer.parseInt(n)>255)return false;return true;}
@@ -18,6 +18,7 @@ final class Protocols {
         String protocol=p.getString("protocol");check(ALL.contains(protocol)&&host(p.optString("server")));
         Object port=p.get("port");check(port instanceof Number&&((Number)port).doubleValue()==p.getInt("port")&&p.getInt("port")>0&&p.getInt("port")<=65535);
         JSONObject out=new JSONObject();for(String k:asList("id","location","protocol","server","port"))out.put(k,p.get(k));
+        check(!p.has("ipv6")||p.get("ipv6") instanceof Boolean);out.put("ipv6",supportsIpv6(p));
         if(protocol.equals("AmneziaWG")){
             check(ipv4(p.optString("ip")));out.put("ip",p.getString("ip"));
             for(String k:asList("privateKey","publicKey","presharedKey")){check(key(p.optString(k)));out.put(k,p.getString(k));}

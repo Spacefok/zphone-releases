@@ -1,10 +1,11 @@
 import {validateSplit,splitRules} from './split-tunnel.mjs';
-export const VERSION='0.6.7';
+export const VERSION='0.6.8';
 export const PROTOCOLS=['TrustTunnel','Mieru','NaiveProxy','AmneziaWG','Hysteria2'];
 const host=/^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
 const str=(v,min,max)=>typeof v==='string'&&v.length>=min&&v.length<=max;
 const key=v=>typeof v==='string'&&/^[A-Za-z0-9+/]{43}=$/.test(v);
 const ipv4=v=>typeof v==='string'&&/^\d{1,3}(?:\.\d{1,3}){3}$/.test(v)&&v.split('.').every(n=>Number(n)<=255);
+export const supportsIpv6=profile=>profile.ipv6===true&&profile.protocol!=='AmneziaWG';
 export function validateAwg(input){
   if(!input||input.version!==3||!key(input['header-protection-key']))throw Error('Нужны параметры AmneziaWG 3.1.');
   const output={version:3,'header-protection-key':input['header-protection-key']};
@@ -26,9 +27,11 @@ export function validateBundle(value) {
     seen.add(p.id);
     if(!['FIN','AMS','DEU'].includes(p.location)||!PROTOCOLS.includes(p.protocol))throw Error('Неподдерживаемая локация или протокол.');
     if(!str(p.server,1,253)||!host.test(p.server)||!Number.isInteger(p.port)||p.port<1||p.port>65535)throw Error('Некорректный адрес подключения.');
+    if(p.ipv6!==undefined&&typeof p.ipv6!=='boolean')throw Error('Некорректная поддержка IPv6.');
+    const capability={ipv6:supportsIpv6(p)};
     if(p.protocol==='AmneziaWG'){
       if(!ipv4(p.ip)||!key(p.privateKey)||!key(p.publicKey)||!key(p.presharedKey)||!Number.isInteger(p.mtu)||p.mtu<576||p.mtu>1400)throw Error('Некорректный ключ или адрес AWG.');
-      return {id:p.id,location:p.location,protocol:p.protocol,server:p.server,port:p.port,ip:p.ip,privateKey:p.privateKey,publicKey:p.publicKey,presharedKey:p.presharedKey,mtu:p.mtu,awg:validateAwg(p.awg)};
+      return {id:p.id,location:p.location,protocol:p.protocol,server:p.server,port:p.port,...capability,ip:p.ip,privateKey:p.privateKey,publicKey:p.publicKey,presharedKey:p.presharedKey,mtu:p.mtu,awg:validateAwg(p.awg)};
     }
     if(!str(p.password,1,512)||(p.protocol!=='Hysteria2'&&!str(p.username,1,128)))throw Error('В доступе отсутствуют учётные данные.');
     if(p.protocol==='NaiveProxy'&&(!ipv4(p.server)||!str(p.sni,1,253)||p.fingerprint!==undefined))throw Error('NaiveProxy требует IPv4 узла и DNS-имя с доверенным сертификатом.');
@@ -37,7 +40,7 @@ export function validateBundle(value) {
     if(p.sni!==undefined&&(!str(p.sni,1,253)||!host.test(p.sni)))throw Error('Некорректный SNI.');
     if(p.fingerprint!==undefined&&!/^[a-fA-F0-9]{64}$/.test(p.fingerprint))throw Error('Некорректный отпечаток сертификата.');
     if(p.clientRandomPrefix!==undefined&&(!/^(?:[a-fA-F0-9]{2}){1,16}$/.test(p.clientRandomPrefix)||p.protocol!=='TrustTunnel'))throw Error('Некорректный TLS-префикс.');
-    return {id:p.id,location:p.location,protocol:p.protocol,server:p.server,port:p.port,...(p.protocol!=='Hysteria2'?{username:p.username}:{}),password:p.password,...(p.sni?{sni:p.sni}:{}),...(p.fingerprint?{fingerprint:p.fingerprint.toLowerCase()}: {}),...(p.clientRandomPrefix?{clientRandomPrefix:p.clientRandomPrefix.toLowerCase()}: {}),...(p.obfsPassword?{obfsPassword:p.obfsPassword}:{}),...(p.obfsType?{obfsType:p.obfsType}:{})};
+    return {id:p.id,location:p.location,protocol:p.protocol,server:p.server,port:p.port,...capability,...(p.protocol!=='Hysteria2'?{username:p.username}:{}),password:p.password,...(p.sni?{sni:p.sni}:{}),...(p.fingerprint?{fingerprint:p.fingerprint.toLowerCase()}: {}),...(p.clientRandomPrefix?{clientRandomPrefix:p.clientRandomPrefix.toLowerCase()}: {}),...(p.obfsPassword?{obfsPassword:p.obfsPassword}:{}),...(p.obfsType?{obfsType:p.obfsType}:{})};
   });
   return {format:'zphone-test-v1',scope:'test',profiles};
 }
@@ -69,7 +72,7 @@ export function coreConfig(profile,{port,apiPort,secret,mode='isolated',naivePor
   if(profile.protocol==='TrustTunnel'&&profile.clientRandomPrefix)proxy['client-random-prefix']=profile.clientRandomPrefix;
   split=validateSplit(split);
   const splitting=mode==='vpn'&&split.mode!=='all';
-  const outboundIpv6=profile.protocol!=='AmneziaWG';
+  const outboundIpv6=supportsIpv6(profile);
   return {'mixed-port':port,'bind-address':'127.0.0.1','allow-lan':false,'external-controller':`127.0.0.1:${apiPort}`,secret,mode:'rule','log-level':'silent',ipv6:true,'find-process-mode':splitting?'strict':'off','profile':{'store-selected':false,'store-fake-ip':false},dns:{enable:true,ipv6:outboundIpv6||splitting,'respect-rules':true,'enhanced-mode':'redir-host',nameserver:['https://1.1.1.1/dns-query','https://1.0.0.1/dns-query'].map(url=>splitting?url+'#Zphone-Test':url),'proxy-server-nameserver':['https://1.1.1.1/dns-query']},tun:{enable:mode==='vpn',device:'ZphoneTest',stack:'gvisor','auto-route':true,'strict-route':true,'auto-detect-interface':true,'dns-hijack':['any:53'],mtu:1400,...(profile.protocol==='NaiveProxy'?{'route-exclude-address':[profile.server+'/32']}:{})},proxies:[proxy],rules:splitRules(split,{vpn:mode==='vpn',udp:profile.protocol!=='NaiveProxy',ipv6:outboundIpv6})};
 }
 export function compareVersion(a,b) {

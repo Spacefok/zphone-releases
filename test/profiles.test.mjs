@@ -1,8 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validateBundle,candidates,publicProfiles,coreConfig,compareVersion} from '../shared/profiles.mjs';
+import {validateBundle,candidates,publicProfiles,coreConfig,compareVersion,supportsIpv6} from '../shared/profiles.mjs';
 const profile={id:'test-fin',location:'FIN',protocol:'TrustTunnel',server:'vpn.example.org',port:443,username:'test',password:'test-only',sni:'vpn.example.org',fingerprint:'a'.repeat(64)};
 const bundle=profiles=>({format:'zphone-test-v1',scope:'test',profiles});
+test('IPv6 requires explicit exit capability, not just protocol support',()=>{
+  for(const location of ['FIN','AMS','DEU']){
+    for(const ipv6 of [undefined,false,true]){
+      const checked=validateBundle(bundle([{...profile,location,ipv6}])).profiles[0];
+      assert.equal(supportsIpv6(checked),ipv6===true);
+      const config=coreConfig(checked,{port:19000,apiPort:19001,secret:'x'.repeat(24),mode:'vpn'});
+      assert.equal(config.dns.ipv6,ipv6===true);
+      assert.equal(config.rules.includes('IP-CIDR6,::/0,REJECT,no-resolve'),ipv6!==true);
+      assert.equal(config.ipv6,true,'Keep IPv6 captured, never leak unsupported traffic');
+    }
+  }
+  assert.equal(supportsIpv6({protocol:'AmneziaWG',ipv6:true}),false);
+  for(const ipv6 of ['true',1,null])assert.throws(()=>validateBundle(bundle([{...profile,ipv6}])));
+});
 test('reject production and malformed imports',()=>{
   assert.throws(()=>validateBundle({...bundle([profile]),scope:'production'}));
   assert.throws(()=>validateBundle(bundle([{...profile,server:'bad host'}])));
