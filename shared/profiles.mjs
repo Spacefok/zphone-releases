@@ -1,6 +1,6 @@
 import {validateSplit,splitRules} from './split-tunnel.mjs';
 import {availableLocations,profileCountry,isLocationSelection} from './countries.mjs';
-export const VERSION='0.6.9';
+export const VERSION='0.6.10';
 export const PROTOCOLS=['TrustTunnel','Mieru','NaiveProxy','AmneziaWG','Hysteria2'];
 const host=/^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
 const str=(v,min,max)=>typeof v==='string'&&v.length>=min&&v.length<=max;
@@ -76,7 +76,8 @@ export function coreConfig(profile,{port,apiPort,secret,mode='isolated',naivePor
   split=validateSplit(split);
   const splitting=mode==='vpn'&&split.mode!=='all';
   const outboundIpv6=supportsIpv6(profile);
-  return {'mixed-port':port,'bind-address':'127.0.0.1','allow-lan':false,'external-controller':`127.0.0.1:${apiPort}`,secret,mode:'rule','log-level':'silent',ipv6:true,'find-process-mode':splitting?'strict':'off','profile':{'store-selected':false,'store-fake-ip':false},dns:{enable:true,ipv6:outboundIpv6||splitting,'respect-rules':true,'enhanced-mode':'redir-host',nameserver:['https://1.1.1.1/dns-query','https://1.0.0.1/dns-query'].map(url=>splitting?url+'#Zphone-Test':url),'proxy-server-nameserver':['https://1.1.1.1/dns-query']},tun:{enable:mode==='vpn',device:'ZphoneTest',stack:'gvisor','auto-route':true,'strict-route':true,'auto-detect-interface':true,'dns-hijack':['any:53'],mtu:1400,...(profile.protocol==='NaiveProxy'?{'route-exclude-address':[profile.server+'/32']}:{})},proxies:[proxy],rules:splitRules(split,{vpn:mode==='vpn',udp:profile.protocol!=='NaiveProxy',ipv6:outboundIpv6})};
+  // DNS is shared across apps: split bypasses must not advertise IPv6 to an IPv4-only tunnel.
+  return {'mixed-port':port,'bind-address':'127.0.0.1','allow-lan':false,'external-controller':`127.0.0.1:${apiPort}`,secret,mode:'rule','log-level':'silent',ipv6:true,'find-process-mode':splitting?'strict':'off','profile':{'store-selected':false,'store-fake-ip':false},dns:{enable:true,ipv6:outboundIpv6,'respect-rules':true,'enhanced-mode':'redir-host',nameserver:['https://1.1.1.1/dns-query','https://1.0.0.1/dns-query'].map(url=>splitting?url+'#Zphone-Test':url),'proxy-server-nameserver':['https://1.1.1.1/dns-query']},tun:{enable:mode==='vpn',device:'ZphoneTest',stack:'gvisor','auto-route':true,'strict-route':true,'auto-detect-interface':true,'dns-hijack':['any:53'],mtu:1400,...(profile.protocol==='NaiveProxy'?{'route-exclude-address':[profile.server+'/32']}:{})},proxies:[proxy],rules:splitRules(split,{vpn:mode==='vpn',udp:profile.protocol!=='NaiveProxy',ipv6:outboundIpv6})};
 }
 export function compareVersion(a,b) {
   const parse=v=>{if(!/^\d+\.\d+\.\d+$/.test(v))throw Error('Invalid release version');return v.split('.').map(Number);};

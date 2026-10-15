@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {validateSplit,splitRules} from '../shared/split-tunnel.mjs';
-import {coreConfig} from '../shared/profiles.mjs';
+import {coreConfig,PROTOCOLS} from '../shared/profiles.mjs';
 const app={id:'C:\\Program Files (x86)\\Example\\Browser.exe',name:'Browser'};
 const profile={id:'test',location:'FIN',protocol:'Mieru',server:'192.0.2.1',port:443,username:'test',password:'test-password',ipv6:true};
 const options={port:19000,apiPort:19001,secret:'s'.repeat(24),mode:'vpn'};
@@ -41,6 +41,26 @@ test('IPv4-only AWG blocks IPv6 only on VPN-bound application routes',()=>{
   assert.deepEqual(all.rules,['IP-CIDR6,::/0,REJECT,no-resolve','MATCH,Zphone-Test']);
   const exclude=coreConfig(awg,{...options,split:{mode:'exclude',apps:[app]}});assert.equal(exclude.rules[0],`PROCESS-PATH,${app.id},DIRECT`);assert.equal(exclude.rules[1],'IP-CIDR6,::/0,REJECT,no-resolve');
   const include=coreConfig(awg,{...options,split:{mode:'include',apps:[app]}});assert.equal(include.rules[0],`AND,((PROCESS-PATH,${app.id}),(IP-CIDR6,::/0,no-resolve)),REJECT`);assert.equal(include.rules.at(-1),'MATCH,DIRECT');
-  assert.equal(include.dns.ipv6,true);assert.equal(exclude.dns.ipv6,true);
+  assert.equal(include.dns.ipv6,false);assert.equal(exclude.dns.ipv6,false);
   assert.equal(coreConfig(profile,options).dns.ipv6,true);
+});
+
+test('split DNS advertises IPv6 only when the selected tunnel supports it',()=>{
+  for(const protocol of PROTOCOLS){
+    for(const ipv6 of [undefined,false,true]){
+      for(const mode of ['all','exclude','include']){
+        const p={...profile,protocol,ipv6,ip:'10.0.0.2',mtu:1280};
+        const split={mode,apps:mode==='all'?[]:[app]};
+        const config=coreConfig(p,{...options,naivePort:19002,split});
+        const supported=ipv6===true&&protocol!=='AmneziaWG';
+        assert.equal(config.dns.ipv6,supported,`${protocol} / ${mode} / ipv6=${ipv6}`);
+        assert.equal(config.ipv6,true,'Unsupported IPv6 must remain captured');
+        assert.equal(config.rules.some(rule=>rule.includes('IP-CIDR6')),!supported);
+        if(mode!=='all'){
+          assert(config.dns.nameserver.every(url=>url.endsWith('#Zphone-Test')));
+          assert(config.rules.includes(`PROCESS-PATH,${app.id},${mode==='exclude'?'DIRECT':'Zphone-Test'}`));
+        }
+      }
+    }
+  }
 });

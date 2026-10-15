@@ -3,7 +3,7 @@ export const PUBLIC_SCRIPTS = [
   'build-preview-android.ps1', 'build-icons.mjs', 'build-flags.mjs', 'package-native-source.ps1',
   'fetch-runtime.mjs', 'fetch-naive.mjs', 'sync-android.mjs', 'package-installer.mjs',
   'release-key.mjs', 'sign-release.mjs', 'preview-release-draft.mjs',
-  'qa-issue-report.cjs', 'qa-diagnostic-state.cjs', 'qa-countries.cjs', 'public-source-files.mjs',
+  'qa-issue-report.cjs', 'qa-diagnostic-state.cjs', 'qa-countries.cjs', 'qa-ipv6-dns.mjs', 'public-source-files.mjs',
 ];
 
 export const REQUIRED_REPORT_FILES = [

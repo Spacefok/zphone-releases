@@ -1,4 +1,4 @@
-# Zphone 0.6.9
+# Zphone 0.6.10
 
 Early-access VPN client for Windows x64 and Android arm64. Downloading the app
 does not grant VPN access. Sign in through the main bot
@@ -30,6 +30,19 @@ The test channel is separate from stable. Update installation is blocked while
 this app's VPN is active. Windows requests administrator rights, including
 opt-in startup; it does not bypass UAC. There is no persistent OS-enforced
 kill switch.
+
+### IPv6 And Split Tunneling
+
+Windows DNS returns IPv6 addresses only when the selected profile explicitly
+supports IPv6. Application exclusions do not change this capability. With an
+IPv4-only profile, including current AmneziaWG profiles, the shared resolver
+returns empty AAAA answers for all applications using it, including excluded
+applications. Their DIRECT routing rules remain unchanged. IPv6-capable
+profiles keep AAAA resolution; unsupported VPN-bound IPv6 remains captured
+and rejected instead of leaking outside the tunnel.
+
+Applications using cached IPv6 addresses or their own DNS can still attempt
+unsupported IPv6. This policy does not add IPv6 transport to IPv4-only profiles.
 
 ## Issue Reports And Privacy
 
@@ -76,8 +89,8 @@ npm run package:installer
 
 For an upgrade release, first verify the existing external Android keystore
 and password file are present. Do not use the script's first-time key-generation
-path for an upgrade. Package `org.zphone.preview` uses versionCode 18 for 0.6.9
-(build android-20261015.2; Windows build windows-20261015.2).
+path for an upgrade. Package `org.zphone.preview` uses versionCode 19 for 0.6.10
+(build android-20261015.3; Windows build windows-20261015.3).
 A different certificate cannot replace an existing installation. Do not uninstall
 a working client to bypass this check.
 
@@ -85,6 +98,10 @@ Mock report UI checks: `node scripts/qa-issue-report.cjs`, with separately
 installed Playwright. Optional `ZPHONE_PLAYWRIGHT_PATH` and
 `ZPHONE_CHROMIUM_PATH` select local tooling. The script uses an isolated mock
 bridge, not an installed app or VPN.
+
+Run `node scripts/qa-ipv6-dns.mjs release/qa-ipv6` for real-core DNS regression
+checks. The test uses a loopback DNS fixture, disables TUN, and never loads
+user profiles or changes system routes.
 
 Run `node scripts/qa-diagnostic-state.cjs` after the UI build to check that
 connection-context changes clear old diagnostics and discard late replies.
