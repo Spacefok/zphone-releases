@@ -1,4 +1,4 @@
-function createTray({Tray,Menu,nativeImage,window,iconPath,getState,isQuitting,disconnect,quit,logger}) {
+function createTray({Tray,Menu,nativeImage,window,iconPath,getState,locationName=route=>route.location,isQuitting,disconnect,quit,logger}) {
   const image=nativeImage.createFromPath(iconPath);
   if(image.isEmpty())throw Error('Tray icon unavailable');
   const tray=new Tray(image);let disposed=false,stopping=false,lastMenu='';
@@ -7,7 +7,7 @@ function createTray({Tray,Menu,nativeImage,window,iconPath,getState,isQuitting,d
     if(disposed)return;
     const state=getState(),status=state.status||'off';
     const labels={off:'Не подключено',connecting:'Подключаемся',checking:'Проверяем интернет',recovering:'Восстанавливаем соединение',connected:state.mode==='isolated'?'Прокси подключён':'Подключено',disconnecting:'Отключаемся',error:'Ошибка подключения'};
-    const route=state.route?`${state.route.location} · ${state.route.protocol}`:'';
+    const route=state.route?`${locationName(state.route)} · ${state.route.protocol}`:'';
     const title=[labels[status]||labels.off,route].filter(Boolean).join(' · ');
     const key=title+stopping;if(key===lastMenu)return;lastMenu=key;
     const canStop=['connecting','checking','recovering','connected'].includes(status)&&!stopping;

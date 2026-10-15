@@ -14,10 +14,15 @@ final class Protocols {
     private static boolean key(String s){return s.matches("[A-Za-z0-9+/]{43}=");}
     private static boolean ipv4(String s){if(!s.matches("[0-9]{1,3}(?:\\.[0-9]{1,3}){3}"))return false;for(String n:s.split("\\."))if(Integer.parseInt(n)>255)return false;return true;}
     private static void check(boolean value) throws Exception {if(!value)throw new Exception("Некорректное подключение.");}
+    static JSONObject publicRoute(JSONObject p) throws Exception {
+        return new JSONObject().put("location",p.getString("location")).put("protocol",p.getString("protocol"))
+            .put("country",Countries.country(p.opt("location"),p.has("country"),p.opt("country")));
+    }
     static JSONObject validate(JSONObject p) throws Exception {
         String protocol=p.getString("protocol");check(ALL.contains(protocol)&&host(p.optString("server")));
         Object port=p.get("port");check(port instanceof Number&&((Number)port).doubleValue()==p.getInt("port")&&p.getInt("port")>0&&p.getInt("port")<=65535);
         JSONObject out=new JSONObject();for(String k:asList("id","location","protocol","server","port"))out.put(k,p.get(k));
+        out.put("country",Countries.country(p.opt("location"),p.has("country"),p.opt("country")));
         check(!p.has("ipv6")||p.get("ipv6") instanceof Boolean);out.put("ipv6",supportsIpv6(p));
         if(protocol.equals("AmneziaWG")){
             check(ipv4(p.optString("ip")));out.put("ip",p.getString("ip"));

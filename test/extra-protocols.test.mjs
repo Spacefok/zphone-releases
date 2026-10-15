@@ -36,5 +36,5 @@ test('NaiveProxy uses only its local helper, excludes only the endpoint and reje
 test('new protocols remain individually selectable and public metadata is credential-free',()=>{
   const profiles=[naive,hy,awg].map(p=>validate({...p,id:p.protocol}));
   for(const p of profiles)assert.deepEqual(candidates(profiles,'FIN',p.protocol),[p]);
-  for(const p of publicProfiles({profiles}))assert.deepEqual(Object.keys(p),['id','location','protocol']);
+  for(const p of publicProfiles({profiles}))assert.deepEqual(Object.keys(p),['id','location','protocol','country']);
 });

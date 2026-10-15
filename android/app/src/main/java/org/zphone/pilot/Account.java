@@ -19,15 +19,31 @@ import java.util.List;
 
 final class Account {
     private final Context context;
-    private JSONObject pending;
+    private final Object guard;
+    private volatile JSONObject pending;
     private volatile JSONObject pendingReport;
     private java.util.Timer reportExpiry;
     private long reportTime;
     private String reportOwner;
-    private String token,state="unconfigured",message="",preferred;
-    Account(Context context) throws Exception {this.context=context.getApplicationContext();if(config().optString("baseUrl","").startsWith("https://")){token=load();state=token==null?"signed_out":"authorized";}}
+    private volatile String token,state="unconfigured",message="",preferred;
+    private volatile Session session;
+    private long generation;
+    private volatile boolean closed;
+    static final class Session {
+        private final String token;
+        final String scope;
+        Session(String token) throws Exception {
+            this.token=token;
+            byte[] hash=java.security.MessageDigest.getInstance("SHA-256").digest(("zphone-profile-scope-v1:"+token).getBytes(StandardCharsets.UTF_8));
+            StringBuilder out=new StringBuilder();for(byte value:hash)out.append(String.format(java.util.Locale.ROOT,"%02x",value&255));scope=out.toString();
+        }
+    }
+    Account(Context context,Object guard) throws Exception {this.context=context.getApplicationContext();this.guard=guard;if(config().optString("baseUrl","").startsWith("https://")){token=load();session=token==null?null:new Session(token);state=token==null?"signed_out":"authorized";}}
+    Session session(){return session;}
+    void cancelPending(){synchronized(guard){generation++;}}
+    void close(){synchronized(guard){closed=true;generation++;}}
     private JSONObject config() throws Exception {return UpdateCheck.config(context).getJSONObject("auth");}
-    synchronized JSONObject snapshot() throws Exception {JSONObject out=new JSONObject().put("state",state).put("message",message);if(pending!=null)out.put("number",pending.getString("number")).put("expires",pending.getLong("expires"));return out;}
+    JSONObject snapshot() throws Exception {JSONObject p=pending;JSONObject out=new JSONObject().put("state",state).put("message",message);if(p!=null)out.put("number",p.getString("number")).put("expires",p.getLong("expires"));return out;}
     private SecretKey key() throws Exception {
         String alias="zphone_account_v1";KeyStore store=KeyStore.getInstance("AndroidKeyStore");store.load(null);
         if(!store.containsAlias(alias)){KeyGenerator gen=KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore");gen.init(new KeyGenParameterSpec.Builder(alias,KeyProperties.PURPOSE_ENCRYPT|KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build());gen.generateKey();}
@@ -40,7 +56,7 @@ final class Account {
     }
     private void save(String value) throws Exception {
         File file=new File(context.getFilesDir(),"account.enc");if(value==null){Files.deleteIfExists(file.toPath());return;}
-        Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,key());byte[] encrypted=cipher.doFinal(value.getBytes(StandardCharsets.UTF_8)),iv=cipher.getIV(),out=new byte[iv.length+encrypted.length];System.arraycopy(iv,0,out,0,iv.length);System.arraycopy(encrypted,0,out,iv.length,encrypted.length);Files.write(file.toPath(),out);
+        Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,key());byte[] encrypted=cipher.doFinal(value.getBytes(StandardCharsets.UTF_8)),iv=cipher.getIV(),out=new byte[iv.length+encrypted.length];System.arraycopy(iv,0,out,0,iv.length);System.arraycopy(encrypted,0,out,iv.length,encrypted.length);ProfileStore.atomicReplace(file,out);
     }
     private JSONObject call(String route,JSONObject data,String bearer) throws Exception {
         JSONObject settings=config();List<String> values=new ArrayList<>();
@@ -58,6 +74,7 @@ final class Account {
         final int status;final String code;final boolean received;
         AccessFailure(String message,int status,String code,boolean received){super(message);this.status=status;this.code=code;this.received=received;}
     }
+    static int status(Exception error){return error instanceof AccessFailure?((AccessFailure)error).status:0;}
     private JSONObject request(String base,String route,JSONObject data,String bearer,int attempt) throws Exception {
         URL url=new URL(new URL(base),route);
         HttpURLConnection connection=(HttpURLConnection)url.openConnection();connection.setInstanceFollowRedirects(false);connection.setConnectTimeout(6000);connection.setReadTimeout(6000);connection.setRequestMethod("POST");connection.setDoOutput(true);connection.setRequestProperty("Content-Type","application/json");if(bearer!=null)connection.setRequestProperty("Authorization","Bearer "+bearer);
@@ -82,23 +99,39 @@ final class Account {
             throw new AccessFailure(text,status,code,received);
         }finally{connection.disconnect();}
     }
-    synchronized String begin() throws Exception {
+    String begin() throws Exception {
         String bot=config().optString("botUsername","");if(!bot.matches("[A-Za-z0-9_]{5,32}"))throw new Exception("Вход через бота ещё не настроен.");
-        if(pending!=null&&pending.getLong("expires")*1000>System.currentTimeMillis())return botLink();
+        final long request;
+        synchronized(guard){if(closed)throw new Exception("Account closed");if(pending!=null&&pending.getLong("expires")*1000>System.currentTimeMillis())return botLink();request=++generation;}
         JSONObject result=call("/v1/device/start",new JSONObject().put("platform","android"),null);
         if(!result.getString("code").matches("[A-Za-z0-9_-]{32}")||!result.getString("secret").matches("[A-Za-z0-9_-]{43}")||!result.getString("number").matches("[0-9]{6}"))throw new Exception("Invalid login response");
-        pending=result;state="pending";message="";return botLink();
+        synchronized(guard){if(closed||request!=generation)throw new Exception("Account changed");pending=result;session=null;state="pending";message="";return botLink();}
     }
-    synchronized String botLink() throws Exception {
-        if(pending==null||pending.getLong("expires")*1000<=System.currentTimeMillis())throw new Exception("Заявка истекла. Начните вход заново.");
-        return "https://t.me/"+config().getString("botUsername")+"?start=login_"+pending.getString("code");
+    String botLink() throws Exception {
+        JSONObject p=pending;
+        if(p==null||p.getLong("expires")*1000<=System.currentTimeMillis())throw new Exception("Заявка истекла. Начните вход заново.");
+        return "https://t.me/"+config().getString("botUsername")+"?start=login_"+p.getString("code");
     }
-    synchronized void poll() throws Exception {
-        if(pending==null)return;String status=call("/v1/device/poll",pending,null).getString("state");
-        if(status.equals("approved")){String value=call("/v1/device/redeem",pending,null).getString("token");if(!value.matches("[A-Za-z0-9_-]{43}"))throw new Exception("Invalid session");save(value);token=value;pending=null;state="authorized";}
-        else if(status.equals("expired")||status.equals("rejected")||status.equals("consumed")){pending=null;state=status.equals("consumed")?"expired":status;}
+    void poll() throws Exception {
+        final JSONObject p;final long request;
+        synchronized(guard){if(closed||pending==null)return;p=pending;request=generation;}
+        String status=call("/v1/device/poll",p,null).getString("state");
+        if(status.equals("approved")){
+            synchronized(guard){if(closed||request!=generation||pending!=p)return;}
+            String value=call("/v1/device/redeem",p,null).getString("token");if(!value.matches("[A-Za-z0-9_-]{43}"))throw new Exception("Invalid session");
+            Session next=new Session(value);
+            synchronized(guard){if(closed||request!=generation||pending!=p)return;save(value);token=value;session=next;generation++;pending=null;state="authorized";}
+        }else if(status.equals("expired")||status.equals("rejected")||status.equals("consumed")){
+            synchronized(guard){if(!closed&&request==generation&&pending==p){pending=null;state=status.equals("consumed")?"expired":status;}}
+        }
     }
-    synchronized JSONObject profiles() throws Exception {if(token==null)throw new Exception("Сначала войдите через бота.");JSONObject result=call("/v1/session/profiles",new JSONObject(),token);if(!result.optString("state").equals("ready"))throw new Exception("Доступ одобрен, подключения ещё готовятся.");return result.getJSONObject("bundle");}
+    JSONObject profiles() throws Exception {return profiles(session);}
+    JSONObject profiles(Session captured) throws Exception {
+        if(captured==null||session!=captured)throw new Exception("Сначала войдите через бота.");
+        JSONObject result=call("/v1/session/profiles",new JSONObject(),captured.token);
+        if(session!=captured||closed)throw new Exception("Account changed");
+        if(!result.optString("state").equals("ready"))throw new Exception("Доступ одобрен, подключения ещё готовятся.");return result.getJSONObject("bundle");
+    }
     private void clearReport(){if(reportExpiry!=null){reportExpiry.cancel();reportExpiry=null;}pendingReport=null;reportOwner=null;}
     JSONObject report(Diagnostics logger,JSONObject metadata,boolean confirmed) throws Exception {
         if(!confirmed)throw new Exception("Подтвердите отправку отчёта.");
@@ -124,11 +157,11 @@ final class Account {
             throw new Exception(IssueReport.failure(status,code));
         }
     }
-    synchronized void logout() throws Exception {
-        clearReport();
+    void logout() throws Exception {
+        final String previous;final long request;
+        synchronized(guard){if(closed)return;request=++generation;previous=token;session=null;token=null;pending=null;state="signed_out";message="";clearReport();save(null);}
         boolean revoked=true;
-        try{if(token!=null)call("/v1/session/logout",new JSONObject(),token);}catch(Exception e){revoked=false;}
-        save(null);token=null;pending=null;state="signed_out";
-        message=revoked?"":"Вы вышли на этом устройстве. Отзыв сессии на сервере не подтверждён.";
+        try{if(previous!=null)call("/v1/session/logout",new JSONObject(),previous);}catch(Exception e){revoked=false;}
+        synchronized(guard){if(!closed&&request==generation)message=revoked?"":"Вы вышли на этом устройстве. Отзыв сессии на сервере не подтверждён.";}
     }
 }

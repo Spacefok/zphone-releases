@@ -27,7 +27,7 @@ test('reject production and malformed imports',()=>{
 test('strip untrusted engine options and hide credentials from UI',()=>{
   const checked=validateBundle(bundle([{...profile,'skip-cert-verify':true,'external-ui':'https://bad.example'}]));
   assert.equal(checked.profiles[0]['external-ui'],undefined);
-  assert.deepEqual(Object.keys(publicProfiles(checked)[0]),['id','location','protocol']);
+  assert.deepEqual(Object.keys(publicProfiles(checked)[0]),['id','location','protocol','country']);
 });
 test('manual selection never falls back to a different protocol or location',()=>{
   const profiles=[profile,{...profile,id:'test-ams',location:'AMS'},{...profile,id:'test-mieru',protocol:'Mieru'}];

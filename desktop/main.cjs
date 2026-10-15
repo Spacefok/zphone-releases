@@ -4,9 +4,9 @@ const {createStartup,shouldStartHidden}=require('./startup.cjs');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const os=require('node:os');
-let window,engine,logger,networkTimer,updateTimer,trayController,bundle=null,settings={location:'auto',protocol:'auto',theme:'system',mode:'isolated',startInTray:false,autoCheckUpdates:true,autoDownloadUpdates:false,split:{mode:'all',apps:[]}},quitting=false,showRequested=false;
+let window,engine,logger,networkTimer,updateTimer,trayController,profileRefresh,bundle=null,settings={location:'auto',protocol:'auto',theme:'system',mode:'isolated',startInTray:false,autoCheckUpdates:true,autoDownloadUpdates:false,split:{mode:'all',apps:[]}},quitting=false,showRequested=false;
 const root=path.resolve(__dirname,'..');
-const build='windows-20261015.1';
+const build='windows-20261015.2';
 app.setName('Zphone');
 app.setPath('userData',path.join(app.getPath('appData'),'ZphonePreview'));
 if(!app.requestSingleInstanceLock()){app.quit();}
@@ -18,10 +18,12 @@ app.whenReady().then(async()=>{
   const {Diagnostics}=await import('./diagnostics.mjs');
   const {diagnosticName,saveDiagnostics}=await import('./diagnostics-export.mjs');
   const {VERSION,PROTOCOLS,validateBundle,publicProfiles,compareVersion}=await import('../shared/profiles.mjs');
+  const {isLocationSelection,locationName}=await import('../shared/countries.mjs');
   const {validateSplit}=await import('../shared/split-tunnel.mjs');
   const {runningApplications,applicationItem}=await import('./windows-apps.mjs');
   const {Updates}=await import('./updates.mjs');
   const {Account}=await import('./account.mjs');
+  const {ProfileRefresh,prepareVault}=await import('./profile-refresh.mjs');
   const {createAccountTransport}=await import('./account-http.mjs');
   const updateConfig=JSON.parse(await fs.readFile(path.join(root,'updates.json'),'utf8'));
   const storage=app.getPath('userData'),vault=path.join(storage,'access.enc');
@@ -32,11 +34,12 @@ app.whenReady().then(async()=>{
   settings.startInTray=settings.startInTray===true;
   const startup=createStartup({app,storedPath:settings.startupPath,name:'ZphonePreview',elevation:true});
   if(startup.read().legacy){try{startup.set(true);settings.startupPath=process.execPath;await fs.writeFile(path.join(storage,'settings.json'),JSON.stringify(settings));logger.write('startup.migrated');}catch(error){logger.write('startup.migration_failed',{error});}}
-  try{if(safeStorage.isEncryptionAvailable())bundle=validateBundle(JSON.parse(safeStorage.decryptString(await fs.readFile(vault))));}catch(error){logger.write('access.load_failed',{code:error.code||'invalid_or_unreadable'});}
+  let profileMarker=null;
+  try{if(safeStorage.isEncryptionAvailable()){const stored=JSON.parse(safeStorage.decryptString(await fs.readFile(vault)));bundle=validateBundle(stored);profileMarker=stored.profileSync||null;}}catch(error){logger.write('access.load_failed',{code:error.code||'invalid_or_unreadable'});}
   if(bundle)logger.protectProfiles(bundle.profiles);
   logger.write('access.loaded',{count:bundle?.profiles.length||0,protocols:[...new Set(bundle?.profiles.map(p=>p.protocol)||[])]});logger.flush();
   let updates,account;
-  const snapshot=()=>{const {startupPath,...publicSettings}=settings;return {version:VERSION,build,platform:'windows',settings:publicSettings,startup:startup.read(),updates:updates?.snapshot(),account:account?.snapshot(),profiles:publicProfiles(bundle),diagnostics:{available:logger.available,session:logger.session},connection:engine?.state||{status:'off'}};};
+  const snapshot=()=>{const {startupPath,...publicSettings}=settings;return {version:VERSION,build,platform:'windows',settings:publicSettings,startup:startup.read(),updates:updates?.snapshot(),account:account?.snapshot(),profiles:publicProfiles(bundle),profileSync:profileRefresh?.snapshot()||{state:'idle'},diagnostics:{available:logger.available,session:logger.session},connection:engine?.state||{status:'off'}};};
   const busy=()=>!['off','error'].includes(engine.state.status);
   let networkPending=null,lastStatus=null;
   const captureNetwork=(reason,afterPending=false)=>{
@@ -69,15 +72,26 @@ app.whenReady().then(async()=>{
     if(check.conflicts.length)throw Object.assign(Error('Обнаружен другой VPN. Он не будет изменён. Отключите его самостоятельно перед повторным подключением.'),{code:'VPN_CONFLICT'});
     if(!check.admin)throw Object.assign(Error('Для VPN-режима запустите Zphone от имени администратора.'),{code:'ADMIN_REQUIRED'});
   };
-  engine=new Engine({binary:path.join(runtime,'mihomo.exe'),directory:path.join(storage,'session'),onState:notify,logger,beforeReconnect:preflight});
-  powerMonitor.on('resume',()=>{logger.write('system.resume');void engine.recover('system.resume');});
+  let profileConnectionStatus='off',online=net.isOnline();
+  engine=new Engine({binary:path.join(runtime,'mihomo.exe'),directory:path.join(storage,'session'),onState:state=>{
+    notify();
+    if(state.status!==profileConnectionStatus){profileConnectionStatus=state.status;if(['off','error'].includes(state.status))void profileRefresh?.wake();}
+  },logger,beforeReconnect:preflight});
+  profileRefresh=new ProfileRefresh({version:VERSION,account,marker:profileMarker,isIdle:()=>!busy(),isOnline:()=>net.isOnline(),notify,logger,
+    prepare:async(imported,marker)=>{
+      if(!safeStorage.isEncryptionAvailable())throw Error('Secure storage unavailable');
+      return prepareVault(vault,safeStorage.encryptString(JSON.stringify({...imported,...(marker?{profileSync:marker}:{})})));
+    },
+    apply:imported=>{bundle=imported;logger.protectProfiles(bundle.profiles);}
+  });
+  powerMonitor.on('resume',()=>{logger.write('system.resume');void engine.recover('system.resume');void profileRefresh.wake();});
   void captureNetwork('app.start');
-  networkTimer=setInterval(()=>{if(engine.active){void captureNetwork('interval');void engine.api('/connections',3000).then(data=>logger.write('traffic.totals',{uploadBytes:data.uploadTotal,downloadBytes:data.downloadTotal,connections:data.connections?.length})).catch(error=>logger.write('traffic.error',{error}));}},30000);
+  networkTimer=setInterval(()=>{const nextOnline=net.isOnline();if(nextOnline!==online){online=nextOnline;if(online)void profileRefresh.wake();}if(engine.active){void captureNetwork('interval');void engine.api('/connections',3000).then(data=>logger.write('traffic.totals',{uploadBytes:data.uploadTotal,downloadBytes:data.downloadTotal,connections:data.connections?.length})).catch(error=>logger.write('traffic.error',{error}));}},30000);
   networkTimer.unref();
   window=new BrowserWindow({width:960,height:810,minWidth:380,minHeight:620,title:'Zphone',icon:path.join(root,'dist','icon.png'),backgroundColor:'#fafbf9',show:false,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   window.setMenuBarVisibility(false);
-  window.on('focus',notify);
-  try{trayController=createTray({Tray,Menu,nativeImage,window,iconPath:path.join(root,'dist','tray.png'),getState:()=>engine.state,isQuitting:()=>quitting,disconnect:async()=>{await engine.stop();await captureNetwork('tray.disconnect',true);},quit:()=>app.quit(),logger});}
+  window.on('focus',()=>{notify();void profileRefresh.wake();});
+  try{trayController=createTray({Tray,Menu,nativeImage,window,iconPath:path.join(root,'dist','tray.png'),getState:()=>engine.state,locationName,isQuitting:()=>quitting,disconnect:async()=>{await engine.stop();await captureNetwork('tray.disconnect',true);},quit:()=>app.quit(),logger});}
   catch(error){logger.write('tray.unavailable',{error});}
   window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   window.webContents.on('will-navigate',event=>event.preventDefault());
@@ -91,17 +105,13 @@ app.whenReady().then(async()=>{
     if(command==='snapshot')return snapshot();
     if(command==='openSupport'){if(!/^\w{5,32}$/.test(updateConfig.auth?.botUsername||''))throw Error('Адрес поддержки ещё не настроен.');await shell.openExternal('https://t.me/'+updateConfig.auth.botUsername);return {ok:true};}
     if(command==='accountBegin'||command==='accountOpenBot'){
-      const result=command==='accountBegin'?await account.begin():account.botLink();notify();
+      const result=command==='accountBegin'?await profileRefresh.sessionChange(()=>account.begin()):account.botLink();notify();
       try{await shell.openExternal(result.url);}catch{throw Error('Заявка создана, но Telegram не открылся. Нажмите «Открыть бота» ещё раз или проверьте установленный браузер.');}return snapshot();
     }
-    if(command==='accountPoll'){await account.poll();notify();return snapshot();}
-    if(command==='accountLogout'){await account.logout();notify();return snapshot();}
+    if(command==='accountPoll'){await profileRefresh.sessionChange(()=>account.poll());notify();return snapshot();}
+    if(command==='accountLogout'){await profileRefresh.sessionChange(()=>account.logout());notify();return snapshot();}
     if(command==='accountProfiles'){
-      if(busy())throw Error('Сначала отключите соединение.');
-      const response=await account.profiles();if(response.state!=='ready')throw Error('Доступ одобрен, подключения ещё готовятся.');
-      const imported=validateBundle(response.bundle);
-      if(!safeStorage.isEncryptionAvailable())throw Error('Защищённое хранилище недоступно.');
-      await fs.writeFile(vault,safeStorage.encryptString(JSON.stringify(imported)));bundle=imported;logger.protectProfiles(bundle.profiles);logger.write('access.from_bot',{count:bundle.profiles.length});notify();return snapshot();
+      await profileRefresh.refresh({manual:true});return snapshot();
     }
     if(command==='exportDiagnostics'){
       const picked=await dialog.showSaveDialog(window,{title:'Экспорт диагностики',defaultPath:path.join(app.getPath('downloads'),diagnosticName()),filters:[{name:'ZIP',extensions:['zip']}]});
@@ -119,12 +129,12 @@ app.whenReady().then(async()=>{
     }
     if(command==='import'){
       if(busy())throw Error('Сначала отключите соединение.');
-      const picked=await dialog.showOpenDialog(window,{title:'Подключения Zphone',properties:['openFile'],filters:[{name:'Zphone',extensions:['zphone','json']}]});
-      if(picked.canceled)return snapshot();
-      const stat=await fs.stat(picked.filePaths[0]);if(stat.size>131072)throw Error('Файл слишком большой.');
-      const imported=validateBundle(JSON.parse(await fs.readFile(picked.filePaths[0],'utf8')));
-      if(!safeStorage.isEncryptionAvailable())throw Error('Защищённое хранилище Windows недоступно.');
-      await fs.writeFile(vault,safeStorage.encryptString(JSON.stringify(imported)));bundle=imported;logger.protectProfiles(bundle.profiles);logger.write('access.import',{count:bundle.profiles.length});notify();return snapshot();
+      await profileRefresh.importProfiles(async()=>{
+        const picked=await dialog.showOpenDialog(window,{title:'Подключения Zphone',properties:['openFile'],filters:[{name:'Zphone',extensions:['zphone','json']}]});
+        if(picked.canceled)return null;
+        const stat=await fs.stat(picked.filePaths[0]);if(stat.size>131072)throw Error('Файл слишком большой.');
+        return JSON.parse(await fs.readFile(picked.filePaths[0],'utf8'));
+      });return snapshot();
     }
     if(command==='settings'){
       if(!data||typeof data!=='object')throw Error('Некорректные настройки.');
@@ -132,7 +142,7 @@ app.whenReady().then(async()=>{
       if(busy()&&['location','protocol','mode','split'].some(key=>data[key]!==undefined))throw Error('Сначала отключите соединение.');
       const split=data.split===undefined?settings.split:validateSplit(data.split);
       const next={...settings,split};
-      if(data.location!==undefined&&['auto','FIN','AMS','DEU'].includes(data.location))next.location=data.location;
+      if(data.location!==undefined){if(!isLocationSelection(data.location))throw Error('Некорректная локация.');next.location=data.location;}
       if(data.protocol!==undefined&&['auto',...PROTOCOLS].includes(data.protocol))next.protocol=data.protocol;
       if(data.theme!==undefined&&['system','light','dark'].includes(data.theme))next.theme=data.theme;
       if(data.mode!==undefined&&['isolated','vpn'].includes(data.mode))next.mode=data.mode;
@@ -145,6 +155,7 @@ app.whenReady().then(async()=>{
       settings=next;const {startupPath,...loggedSettings}=settings;logger.write('settings.changed',{...loggedSettings,split:{mode:split.mode,count:split.apps.length}});notify();return snapshot();
     }
     if(command==='connect'){
+      return profileRefresh.connect(async()=>{
       if(updates.state.state==='installing')throw Error('Дождитесь завершения установки обновления.');
       if(busy())return snapshot();
       logger.write('user.connect',{location:settings.location,protocol:settings.protocol,mode:settings.mode});
@@ -153,6 +164,7 @@ app.whenReady().then(async()=>{
       if(settings.mode==='vpn'&&settings.split.mode==='include'&&!settings.split.apps.length)throw Error('Выберите хотя бы одно приложение для VPN.');
       await preflight(settings.mode);
       engine.start(bundle.profiles,{...settings},settings.mode);return snapshot();
+      });
     }
     if(command==='disconnect'){logger.write('user.disconnect');await engine.stop();await captureNetwork('after.disconnect',true);return snapshot();}
     if(command==='diagnose'){logger.write('user.diagnose');await captureNetwork('user.diagnose');try{return {ok:true,latency:await engine.check()};}catch(error){logger.write('diagnose.error',{error});return {ok:false,message:'Ответ через соединение не получен.'};}}
@@ -171,8 +183,8 @@ app.whenReady().then(async()=>{
     throw Error('Неизвестная команда.');
     }catch(error){logger.write('command.error',{command,error});throw error;}
   });
-  await window.loadFile(entry);if(!quitting){const hidden=shouldStartHidden(settings,trayController)&&!showRequested;if(!hidden)window.show();logger.write('startup.ready',{hidden});}
+  await window.loadFile(entry);if(!quitting){void profileRefresh.wake();const hidden=shouldStartHidden(settings,trayController)&&!showRequested;if(!hidden)window.show();logger.write('startup.ready',{hidden});}
 }).catch(error=>{if(quitting)return;logger?.write('app.error',{error});logger?.flush();dialog.showErrorBox('Zphone',error.message);app.quit();});
 app.on('window-all-closed',()=>app.quit());
-app.on('before-quit',event=>{if(quitting)return;event.preventDefault();quitting=true;clearInterval(networkTimer);logger?.write('app.quit_requested');Promise.resolve(engine?.stop()).catch(error=>logger?.write('shutdown.error',{error})).finally(()=>{trayController?.dispose();logger?.write('app.quit');logger?.flush();app.quit();});});
+app.on('before-quit',event=>{if(quitting)return;event.preventDefault();quitting=true;clearInterval(networkTimer);clearInterval(updateTimer);logger?.write('app.quit_requested');Promise.resolve(profileRefresh?.shutdown()).then(()=>engine?.stop()).catch(error=>logger?.write('shutdown.error',{error})).finally(()=>{trayController?.dispose();logger?.write('app.quit');logger?.flush();app.quit();});});
 }

@@ -66,9 +66,9 @@ public class TunnelService extends VpnService {
     private static synchronized void publish(JSONObject next){connection=next;MainActivity.notifyState();}
     private void update(String status,JSONObject profile,Integer latency,String error){
         try{JSONObject next=new JSONObject().put("status",status).put("mode","vpn");
-            if(profile!=null)next.put("route",new JSONObject().put("location",profile.getString("location")).put("protocol",profile.getString("protocol")));
+            if(profile!=null)next.put("route",Protocols.publicRoute(profile));
             if(latency!=null)next.put("latency",latency);if(error!=null)next.put("error",error);
-            JSONObject info=new JSONObject().put("status",status);if(profile!=null){info.put("location",profile.optString("location")).put("protocol",profile.optString("protocol"));notificationRoute=profile.optString("location")+" · "+profile.optString("protocol");}if(latency!=null)info.put("latency",latency);logger.write("connection.state",info);publish(next);notificationHandler.post(this::refreshNotification);
+            JSONObject info=new JSONObject().put("status",status);if(profile!=null){info.put("location",profile.optString("location")).put("protocol",profile.optString("protocol"));notificationRoute=Countries.name(Countries.country(profile.opt("location"),profile.has("country"),profile.opt("country")))+" · "+profile.optString("protocol");}if(latency!=null)info.put("latency",latency);logger.write("connection.state",info);publish(next);notificationHandler.post(this::refreshNotification);
         }catch(Exception ignored){}
     }
     @Override public void onCreate(){super.onCreate();instance=this;logger=Diagnostics.get(this);

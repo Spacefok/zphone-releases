@@ -23,7 +23,7 @@ final class IssueReport {
     static {
         ENUMS.put("platform",words("windows android"));
         ENUMS.put("status",words("off connecting checking recovering connected disconnecting error"));ENUMS.put("connectionStatus",ENUMS.get("status"));
-        ENUMS.put("location",words("auto FIN AMS DEU"));ENUMS.put("protocol",words("auto TrustTunnel Mieru NaiveProxy AmneziaWG Hysteria2"));
+        Set<String> locations=new HashSet<>(Countries.locationCodes());locations.add("auto");ENUMS.put("location",locations);ENUMS.put("protocol",words("auto TrustTunnel Mieru NaiveProxy AmneziaWG Hysteria2"));
         ENUMS.put("mode",words("isolated vpn"));ENUMS.put("splitMode",words("all exclude include"));
         ENUMS.put("operation",words("start poll redeem profiles logout report"));ENUMS.put("transport",words("system secure-dns"));ENUMS.put("phase",words("resolve request"));
         ENUMS.put("stage",words("startup core helper tunnel health start proxy check connect launch api reachability android-tunnel vpn-reachability"));

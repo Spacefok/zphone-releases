@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {LOCATION_CODES} from '../shared/countries.mjs';
 
 export const REPORT_BYTES=196608,REPORT_WINDOW_MS=180000,REPORT_RECORDS=1000;
 export const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -12,7 +13,7 @@ health.check health.failed health.proxy_ok recovery.request recovery.wait recove
 cleanup.failed diagnose.error network.error network.snapshot_failed traffic.totals traffic.error traffic.unavailable account.request report.accepted report.failed`.split(/\s+/));
 const enums={
   platform:['windows','android'],status:['off','connecting','checking','recovering','connected','disconnecting','error'],
-  location:['auto','FIN','AMS','DEU'],protocol:['auto','TrustTunnel','Mieru','NaiveProxy','AmneziaWG','Hysteria2'],
+  location:['auto',...LOCATION_CODES],protocol:['auto','TrustTunnel','Mieru','NaiveProxy','AmneziaWG','Hysteria2'],
   mode:['isolated','vpn'],splitMode:['all','exclude','include'],
   operation:['start','poll','redeem','profiles','logout','report'],transport:['system','secure-dns'],phase:['resolve','request'],
   stage:['startup','core','helper','tunnel','health','start','proxy','check','connect','launch','api','reachability','android-tunnel','vpn-reachability'],

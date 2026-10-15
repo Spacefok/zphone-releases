@@ -36,6 +36,8 @@ button:focus-visible{outline:2px solid var(--good);outline-offset:3px}
  .login-number{font-size:28px;font-variant-numeric:tabular-nums;letter-spacing:0}
 .account-status{margin:22px 0;font-size:14px;color:var(--muted)}
 .account-copy{margin:12px 0 20px;font-size:14px;color:var(--muted);overflow-wrap:anywhere}
+.country-flag,.option>.country-flag{display:block;width:32px;height:24px;flex:none;object-fit:contain}
+.option strong,.route-label{overflow-wrap:anywhere}
 .account-settings .login-number{margin:12px 0 20px}
 .account-settings .secondary,.updates>.secondary{margin-top:12px}
 .account-settings .primary .lucide-loader-circle{animation:spin 1.3s linear infinite}

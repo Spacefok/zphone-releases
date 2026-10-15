@@ -4,6 +4,7 @@ import net from 'node:net';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import {coreConfig,candidates,naiveConfig} from '../shared/profiles.mjs';
+import {profileCountry} from '../shared/countries.mjs';
 
 export async function freePort() {
   return new Promise((resolve,reject)=>{const s=net.createServer();s.on('error',reject);s.listen(0,'127.0.0.1',()=>{const port=s.address().port;s.close(()=>resolve(port));});});
@@ -46,7 +47,7 @@ export class Engine {
       for(let index=0;index<order.length;index++){
         if(generation!==this.generation)return;
         const p=order[index];
-        this.update({status:index?'recovering':'connecting',error:null,route:{location:p.location,protocol:p.protocol},mode,port:null,latency:null});
+        this.update({status:index?'recovering':'connecting',error:null,route:{location:p.location,protocol:p.protocol,country:profileCountry(p)},mode,port:null,latency:null});
         try{
           await this.launch(p,mode,generation,selection.split);
           if(generation!==this.generation){await this.cleanup();return;}
@@ -104,7 +105,7 @@ export class Engine {
           }
           if(generation!==this.generation)return;
           preflightError=null;
-          this.update({route:{location:profile.location,protocol:profile.protocol}});
+          this.update({route:{location:profile.location,protocol:profile.protocol,country:profileCountry(profile)}});
           try{
             await this.launch(profile,intent.mode,generation,intent.selection.split);
             if(generation!==this.generation){await this.cleanup();return;}

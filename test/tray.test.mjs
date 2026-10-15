@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import {createTray} from '../desktop/tray.cjs';
-function fixture(){
+import {locationName} from '../shared/countries.mjs';
+function fixture(options={}){
   let item,stopped=0,quits=0,quitting=false,state={status:'connected',mode:'vpn',route:{location:'FIN',protocol:'AmneziaWG'}};
   class Tray extends EventEmitter{constructor(){super();item=this;}setToolTip(t){this.tooltip=t;}setContextMenu(m){this.menu=m;}destroy(){this.destroyed=true;}}
   const window=Object.assign(new EventEmitter(),{visible:true,minimized:false,isDestroyed:()=>false,isMinimized(){return this.minimized;},restore(){this.minimized=false;},show(){this.visible=true;},hide(){this.visible=false;},focus(){this.focused=true;}});
-  const controller=createTray({Tray,Menu:{buildFromTemplate:t=>t},nativeImage:{createFromPath:()=>({isEmpty:()=>false})},window,iconPath:'unused',getState:()=>state,isQuitting:()=>quitting,disconnect:async()=>{stopped++;state={status:'off'};controller.update();},quit:()=>{quitting=true;quits++;}});
+  const controller=createTray({Tray,Menu:{buildFromTemplate:t=>t},nativeImage:{createFromPath:()=>({isEmpty:()=>false})},window,iconPath:'unused',getState:()=>state,isQuitting:()=>quitting,disconnect:async()=>{stopped++;state={status:'off'};controller.update();},quit:()=>{quitting=true;quits++;},...options});
   return {window,item,controller,get stopped(){return stopped;},get quits(){return quits;},setState:s=>{state=s;controller.update();}};
 }
 test('minimize and close hide the window without disconnecting or quitting',()=>{
@@ -20,6 +21,16 @@ test('tray exit allows window close and disposal removes event handlers',()=>{
 });
 test('missing tray icon does not intercept window close',()=>{
   const window=new EventEmitter();assert.throws(()=>createTray({nativeImage:{createFromPath:()=>({isEmpty:()=>true})},window}),/icon unavailable/);assert.equal(window.listenerCount('close'),0);
+});
+
+test('tray uses country metadata while preserving the logical route and connection',()=>{
+  const f=fixture({locationName});
+  try{
+    const route={location:'DEU',country:'CZ',protocol:'Mieru'};
+    f.setState({status:'connected',mode:'vpn',route});
+    assert(f.item.tooltip.includes(locationName(route)));assert(!f.item.tooltip.includes('DEU'));
+    assert.equal(route.location,'DEU');assert.equal(f.stopped,0);
+  }finally{f.controller.dispose();}
 });
 
 test('tray distinguishes a local proxy from full VPN without pilot branding',()=>{

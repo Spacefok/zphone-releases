@@ -1,0 +1,6 @@
+Country flag artwork: flag-icons 7.5.0, MIT license.
+Copyright (c) 2013 Panayiotis Lipiridis.
+Source: https://github.com/lipis/flag-icons
+Pinned revision: 7aa5b2bdddd570ece62c812c0cb588ccdc099e2e
+The bundled PNG images are rendered from the original 4x3 SVG artwork.
+Rebuild with: node scripts/build-flags.mjs

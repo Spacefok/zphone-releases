@@ -1,4 +1,4 @@
-# Zphone 0.6.7
+# Zphone 0.6.9
 
 Early-access VPN client for Windows x64 and Android arm64. Downloading the app
 does not grant VPN access. Sign in through the main bot
@@ -16,6 +16,15 @@ with the same signing certificate. See [installation and verification](TESTING.m
 - Windows tray and startup settings; Android foreground traffic notification.
 - Signed update metadata, priority notices and explicit installation.
 - Account sign-in and per-device approval through Telegram.
+- Automatic refresh of account profiles after an app upgrade, with manual refresh available.
+- Country names and local flags for all assigned ISO countries; only issued locations appear.
+
+After the first launch of a new version, signed-in devices fetch their latest
+approved profiles. No new device approval is needed for an ordinary upgrade.
+An active connection defers profile replacement until disconnected. Network,
+validation or storage errors retain the previous profiles and use bounded retries;
+expired sessions require sign-in again. File-only installations do not request
+account profiles. A deliberate manual import takes precedence for that version.
 
 The test channel is separate from stable. Update installation is blocked while
 this app's VPN is active. Windows requests administrator rights, including
@@ -67,8 +76,8 @@ npm run package:installer
 
 For an upgrade release, first verify the existing external Android keystore
 and password file are present. Do not use the script's first-time key-generation
-path for an upgrade. Package `org.zphone.preview` uses versionCode 16 for 0.6.7
-(build android-20261012.17; Windows build windows-20261012.17).
+path for an upgrade. Package `org.zphone.preview` uses versionCode 18 for 0.6.9
+(build android-20261015.2; Windows build windows-20261015.2).
 A different certificate cannot replace an existing installation. Do not uninstall
 a working client to bypass this check.
 

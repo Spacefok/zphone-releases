@@ -1,5 +1,6 @@
 import {validateSplit,splitRules} from './split-tunnel.mjs';
-export const VERSION='0.6.8';
+import {availableLocations,profileCountry,isLocationSelection} from './countries.mjs';
+export const VERSION='0.6.9';
 export const PROTOCOLS=['TrustTunnel','Mieru','NaiveProxy','AmneziaWG','Hysteria2'];
 const host=/^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
 const str=(v,min,max)=>typeof v==='string'&&v.length>=min&&v.length<=max;
@@ -25,10 +26,11 @@ export function validateBundle(value) {
   const profiles=value.profiles.map(p=>{
     if(!p||!str(p.id,1,60)||!/^[a-zA-Z0-9_-]+$/.test(p.id)||seen.has(p.id))throw Error('Некорректный или повторяющийся идентификатор.');
     seen.add(p.id);
-    if(!['FIN','AMS','DEU'].includes(p.location)||!PROTOCOLS.includes(p.protocol))throw Error('Неподдерживаемая локация или протокол.');
+    const country=profileCountry(p);
+    if(!PROTOCOLS.includes(p.protocol))throw Error('Неподдерживаемый протокол.');
     if(!str(p.server,1,253)||!host.test(p.server)||!Number.isInteger(p.port)||p.port<1||p.port>65535)throw Error('Некорректный адрес подключения.');
     if(p.ipv6!==undefined&&typeof p.ipv6!=='boolean')throw Error('Некорректная поддержка IPv6.');
-    const capability={ipv6:supportsIpv6(p)};
+    const capability={country,ipv6:supportsIpv6(p)};
     if(p.protocol==='AmneziaWG'){
       if(!ipv4(p.ip)||!key(p.privateKey)||!key(p.publicKey)||!key(p.presharedKey)||!Number.isInteger(p.mtu)||p.mtu<576||p.mtu>1400)throw Error('Некорректный ключ или адрес AWG.');
       return {id:p.id,location:p.location,protocol:p.protocol,server:p.server,port:p.port,...capability,ip:p.ip,privateKey:p.privateKey,publicKey:p.publicKey,presharedKey:p.presharedKey,mtu:p.mtu,awg:validateAwg(p.awg)};
@@ -42,13 +44,14 @@ export function validateBundle(value) {
     if(p.clientRandomPrefix!==undefined&&(!/^(?:[a-fA-F0-9]{2}){1,16}$/.test(p.clientRandomPrefix)||p.protocol!=='TrustTunnel'))throw Error('Некорректный TLS-префикс.');
     return {id:p.id,location:p.location,protocol:p.protocol,server:p.server,port:p.port,...capability,...(p.protocol!=='Hysteria2'?{username:p.username}:{}),password:p.password,...(p.sni?{sni:p.sni}:{}),...(p.fingerprint?{fingerprint:p.fingerprint.toLowerCase()}: {}),...(p.clientRandomPrefix?{clientRandomPrefix:p.clientRandomPrefix.toLowerCase()}: {}),...(p.obfsPassword?{obfsPassword:p.obfsPassword}:{}),...(p.obfsType?{obfsType:p.obfsType}:{})};
   });
+  availableLocations(profiles);
   return {format:'zphone-test-v1',scope:'test',profiles};
 }
 export function publicProfiles(bundle) {
-  return (bundle?.profiles||[]).map(({id,location,protocol})=>({id,location,protocol}));
+  return (bundle?.profiles||[]).map(p=>({id:p.id,location:p.location,protocol:p.protocol,country:profileCountry(p)}));
 }
 export function candidates(profiles,location='auto',protocol='auto') {
-  if(!['auto','FIN','AMS','DEU'].includes(location)||!['auto',...PROTOCOLS].includes(protocol))throw Error('Некорректный выбор подключения.');
+  if(!isLocationSelection(location)||!['auto',...PROTOCOLS].includes(protocol))throw Error('Некорректный выбор подключения.');
   return profiles.filter(p=>(location==='auto'||p.location===location)&&(protocol==='auto'||p.protocol===protocol)).sort((a,b)=>PROTOCOLS.indexOf(a.protocol)-PROTOCOLS.indexOf(b.protocol)||a.location.localeCompare(b.location));
 }
 export function naiveConfig(profile,port){
