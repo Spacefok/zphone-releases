@@ -10,11 +10,13 @@ public final class UpdateJob extends JobService {
     private static final int ID=42;
     private volatile java.util.concurrent.atomic.AtomicBoolean cancellation;
     static void schedule(Context context){
+        try{SettingsStore.initialize(context);}catch(Exception ignored){return;}
         var scheduler=(JobScheduler)context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
         if(!context.getSharedPreferences("settings",MODE_PRIVATE).getBoolean("autoCheckUpdates",true)){scheduler.cancel(ID);return;}
         scheduler.schedule(new JobInfo.Builder(ID,new ComponentName(context,UpdateJob.class)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPeriodic(12*60*60*1000L).setPersisted(true).build());
     }
     @Override public boolean onStartJob(JobParameters job){var stopped=new java.util.concurrent.atomic.AtomicBoolean();cancellation=stopped;new Thread(()->{try{
+        SettingsStore.initialize(this);
         var prefs=getSharedPreferences("settings",MODE_PRIVATE);if(!prefs.getBoolean("autoCheckUpdates",true))return;
         var result=UpdateCheck.check(this);boolean metered=((ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE)).isActiveNetworkMetered();
         if(!stopped.get()&&prefs.getBoolean("autoDownloadUpdates",false)&&(!prefs.getBoolean("updateWifiOnly",true)||!metered)&&result.optString("state").equals("available"))UpdateCheck.download(this,stopped::get);

@@ -87,6 +87,7 @@ final class UpdateCheck {
     }
     static void install(Activity activity) throws Exception {
         if(TunnelService.running())throw new Exception("Сначала отключите VPN. Обновление уже скачано.");
+        SettingsStore.checkpoint(activity);
         if(!status.optString("state").equals("ready"))throw new Exception("Обновление ещё не готово.");
         if(!activity.getPackageManager().canRequestPackageInstalls()){activity.startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+activity.getPackageName())));return;}
         File file=new File(activity.getCacheDir(),"update.apk");verifyFile(activity,file);if(TunnelService.running())throw new Exception("Сначала отключите VPN.");

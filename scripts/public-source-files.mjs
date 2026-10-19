@@ -7,6 +7,11 @@ export const PUBLIC_SCRIPTS = [
 ];
 
 export const REQUIRED_REPORT_FILES = [
+  'desktop/settings-store.mjs', 'desktop/service-probes.mjs',
+  'android/app/src/main/java/org/zphone/pilot/SettingsStore.java',
+  'android/app/src/main/java/org/zphone/pilot/ServiceProbe.java',
+  'android/app/src/test/java/org/zphone/pilot/SettingsStoreTest.java',
+  'test/settings-store.test.mjs', 'test/service-probes.test.mjs',
   'desktop/diagnostics-report.mjs', 'desktop/diagnostics.mjs',
   'desktop/account.mjs', 'desktop/main.cjs', 'desktop/preload.cjs',
   'shared/account-policy.mjs', 'shared/profiles.mjs', 'shared/release.mjs',

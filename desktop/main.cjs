@@ -6,7 +6,7 @@ const path=require('node:path');
 const os=require('node:os');
 let window,engine,logger,networkTimer,updateTimer,trayController,profileRefresh,bundle=null,settings={location:'auto',protocol:'auto',theme:'system',mode:'isolated',startInTray:false,autoCheckUpdates:true,autoDownloadUpdates:false,split:{mode:'all',apps:[]}},quitting=false,showRequested=false;
 const root=path.resolve(__dirname,'..');
-const build='windows-20261015.3';
+const build='windows-20261019.1';
 app.setName('Zphone');
 app.setPath('userData',path.join(app.getPath('appData'),'ZphonePreview'));
 if(!app.requestSingleInstanceLock()){app.quit();}
@@ -14,7 +14,8 @@ else {
 app.on('second-instance',()=>{showRequested=true;if(trayController)trayController.show();else{window?.show();window?.focus();}});
 app.whenReady().then(async()=>{
   const {Engine}=await import('./engine.mjs');
-  const {windowsNetworkStatus,windowsNetworkDiagnostics}=await import('./windows-network.mjs');
+  const {windowsNetworkStatus,windowsNetworkDiagnostics,reportNetworkType}=await import('./windows-network.mjs');
+  const {collectServiceProbes}=await import('./service-probes.mjs');
   const {Diagnostics}=await import('./diagnostics.mjs');
   const {diagnosticName,saveDiagnostics}=await import('./diagnostics-export.mjs');
   const {VERSION,PROTOCOLS,validateBundle,publicProfiles,compareVersion}=await import('../shared/profiles.mjs');
@@ -25,15 +26,17 @@ app.whenReady().then(async()=>{
   const {Account}=await import('./account.mjs');
   const {ProfileRefresh,prepareVault}=await import('./profile-refresh.mjs');
   const {createAccountTransport}=await import('./account-http.mjs');
+  const {SettingsStore}=await import('./settings-store.mjs');
   const updateConfig=JSON.parse(await fs.readFile(path.join(root,'updates.json'),'utf8'));
   const storage=app.getPath('userData'),vault=path.join(storage,'access.enc');
   await fs.mkdir(storage,{recursive:true});
   logger=new Diagnostics(path.join(storage,'logs'));
   logger.write('app.start',{version:VERSION,build,os:os.release(),arch:process.arch,electron:process.versions.electron,pid:process.pid,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone});logger.flush();
-  try{const saved=JSON.parse(await fs.readFile(path.join(storage,'settings.json'),'utf8'));settings={...settings,...saved,split:validateSplit(saved.split)};}catch{}
+  const settingsStore=new SettingsStore(path.join(storage,'settings.json'),settings,{logger});
+  settings=await settingsStore.load();
   settings.startInTray=settings.startInTray===true;
   const startup=createStartup({app,storedPath:settings.startupPath,name:'ZphonePreview',elevation:true});
-  if(startup.read().legacy){try{startup.set(true);settings.startupPath=process.execPath;await fs.writeFile(path.join(storage,'settings.json'),JSON.stringify(settings));logger.write('startup.migrated');}catch(error){logger.write('startup.migration_failed',{error});}}
+  if(startup.read().legacy){try{settings=await settingsStore.update(value=>({...value,startupPath:process.execPath}),()=>startup.set(true));logger.write('startup.migrated');}catch(error){logger.write('startup.migration_failed',{error});}}
   let profileMarker=null;
   try{if(safeStorage.isEncryptionAvailable()){const stored=JSON.parse(safeStorage.decryptString(await fs.readFile(vault)));bundle=validateBundle(stored);profileMarker=stored.profileSync||null;}}catch(error){logger.write('access.load_failed',{code:error.code||'invalid_or_unreadable'});}
   if(bundle)logger.protectProfiles(bundle.profiles);
@@ -54,6 +57,7 @@ app.whenReady().then(async()=>{
   };
   const accountVault=path.join(storage,'account.enc');
   account=new Account({config:updateConfig.auth,
+    collectDiagnostics:()=>collectServiceProbes({engine,logger,network:reportNetworkType}),
     transport:createAccountTransport({fetcher:(url,options)=>net.fetch(String(url),options),logger}),
     readToken:async()=>{try{return safeStorage.decryptString(await fs.readFile(accountVault));}catch{return null;}},
     writeToken:async token=>{if(!token){await fs.rm(accountVault,{force:true});return;}if(!safeStorage.isEncryptionAvailable())throw Error('Защищённое хранилище недоступно.');await fs.writeFile(accountVault,safeStorage.encryptString(token));}
@@ -140,8 +144,10 @@ app.whenReady().then(async()=>{
       if(!data||typeof data!=='object')throw Error('Некорректные настройки.');
       for(const key of ['startWithWindows','startInTray','autoCheckUpdates','autoDownloadUpdates'])if(data[key]!==undefined&&typeof data[key]!=='boolean')throw Error('Некорректная настройка.');
       if(busy()&&['location','protocol','mode','split'].some(key=>data[key]!==undefined))throw Error('Сначала отключите соединение.');
-      const split=data.split===undefined?settings.split:validateSplit(data.split);
-      const next={...settings,split};
+      settings=await settingsStore.update(current=>{
+      if(busy()&&['location','protocol','mode','split'].some(key=>data[key]!==undefined))throw Error('Сначала отключите соединение.');
+      const split=data.split===undefined?current.split:validateSplit(data.split);
+      const next={...current,split};
       if(data.location!==undefined){if(!isLocationSelection(data.location))throw Error('Некорректная локация.');next.location=data.location;}
       if(data.protocol!==undefined&&['auto',...PROTOCOLS].includes(data.protocol))next.protocol=data.protocol;
       if(data.theme!==undefined&&['system','light','dark'].includes(data.theme))next.theme=data.theme;
@@ -149,10 +155,9 @@ app.whenReady().then(async()=>{
       if(data.startInTray!==undefined)next.startInTray=data.startInTray;
       for(const key of ['autoCheckUpdates','autoDownloadUpdates'])if(data[key]!==undefined)next[key]=data[key];
       if(data.startWithWindows!==undefined)next.startupPath=process.execPath;
-      await fs.writeFile(path.join(storage,'settings.json'),JSON.stringify(next));
-      try{if(data.startWithWindows!==undefined){startup.set(data.startWithWindows);logger.write('startup.changed',{enabled:data.startWithWindows});}}
-      catch(error){await fs.writeFile(path.join(storage,'settings.json'),JSON.stringify(settings));throw error;}
-      settings=next;const {startupPath,...loggedSettings}=settings;logger.write('settings.changed',{...loggedSettings,split:{mode:split.mode,count:split.apps.length}});notify();return snapshot();
+      return next;
+      },()=>{if(data.startWithWindows!==undefined){startup.set(data.startWithWindows);logger.write('startup.changed',{enabled:data.startWithWindows});}});
+      const {startupPath,...loggedSettings}=settings;logger.write('settings.changed',{...loggedSettings,split:{mode:settings.split.mode,count:settings.split.apps.length}});notify();return snapshot();
     }
     if(command==='connect'){
       return profileRefresh.connect(async()=>{

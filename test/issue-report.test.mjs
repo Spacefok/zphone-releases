@@ -34,8 +34,8 @@ test('second privacy pass excludes raw core/network data, old unsafe logs, neste
   const dirty={...metadata,password:'super-secret',token:'t'.repeat(43),site:'visited.example',message:'https://visited.example/path?q=secret C:\\Users\\Alice\\private /home/alice',profile:{location:'FIN',protocol:'Mieru',server:'server.private',password:'super-secret'},error:{name:'Error',code:'ECONNRESET',message:'visited.example'},split:{mode:'include',count:2,apps:['private.exe']},latency:123,ok:false};
   await write('diagnostics.jsonl',[record(10,dirty),record(10,dirty,'core.log'),record(10,dirty,'network.snapshot'),record(10,dirty,'visited.example')]);
   const report=await createIssueReport(logger,dirty,{now,reportId:id}),text=JSON.stringify(report);
-  assert.equal(report.records.length,1);assert.equal(report.records[0].data.errorCode,'ECONNRESET');assert.equal(report.records[0].data.latency,123);
-  for(const value of ['super-secret','visited','server.private','private.exe','Alice','alice','https:','token','password','message','core.log','network.snapshot'])assert(!text.includes(value),value);
+  assert.equal(report.records.length,2);assert.equal(report.records[0].data.errorCode,'ECONNRESET');assert.equal(report.records[0].data.latency,123);
+  for(const value of ['super-secret','visited','server.private','private.exe','Alice','alice','https:','token','password','message','core.log'])assert(!text.includes(value),value);
   assert.deepEqual(reportFields({location:'private.site',operation:'private-token',version:'https://site',build:'C:\\Users\\x',durationMs:Infinity,ok:'true',reason:'secret',profileCount:1e30}),{});
   assert.deepEqual(reportFields(JSON.parse('{"constructor":"private","__proto__":{"password":"secret"},"route":{"location":"DEU","protocol":"NaiveProxy","server":"private.example"}}')),{location:'DEU',protocol:'NaiveProxy'});
 });
@@ -75,6 +75,7 @@ test('missing, oversized files are safe and only expected log names are collecte
 });
 test('no confirmation and legacy signed-out users cause no upload',async t=>{
   let calls=0;const {account,logger}=await accountFixture(t,async()=>{calls++;});
+  account.collectDiagnostics=async()=>{calls++;};
   await assert.rejects(account.report(logger,metadata),/Подтвердите/);
   account.token=null;
   await assert.rejects(account.report(logger,metadata,{confirmed:true}),/Аккаунт.*Импорт/);
@@ -87,11 +88,13 @@ test('double clicks share one request; endpoint fallback and explicit retry pres
     if(fail)throw Object.assign(Error('offline'),{code:'ETIMEDOUT'});
     return {ok:true,reportId:body.reportId,state:'queued'};
   },{baseUrl:'https://first.invalid',baseUrls:['https://first.invalid','https://second.invalid']});
+  let probes=0;account.collectDiagnostics=async()=>{probes++;};
   const first=account.report(logger,metadata,{confirmed:true,now}),second=account.report(logger,metadata,{confirmed:true,now});
   await assert.rejects(first,/не подтверждён/);await assert.rejects(second,/не подтверждён/);assert.equal(calls.length,2);
   fail=false;const result=await account.report(logger,{...metadata,location:'AMS'},{confirmed:true,now:now+1000});
   assert.equal(result.ok,true);assert.equal(new Set(calls.map(c=>c.body)).size,1);assert(calls.every(c=>c.token==='t'.repeat(43)&&c.url.endsWith('/v1/session/report')));
   assert.equal(account.pendingReport,null);
+  assert.equal(probes,1);
 });
 test('rejected auth/rate limit and malformed acknowledgements never claim success or bypass rejection',async t=>{
   for(const status of [401,403,429]){
@@ -111,7 +114,7 @@ test('expired pending report and changed account get fresh IDs; upload failures 
   assert.match(await fs.readFile(path.join(directory,'diagnostics.jsonl'),'utf8'),/health.check/);
 });
 test('UI has explicit privacy copy, waits for acknowledgement and guards double send',async()=>{
-  assert.match(REPORT_CONSENT,/3 минуты.*аккаунтом.*Пароли.*сайты/);assert(!REPORT_ACCEPTED.includes('доставлен'));
+  assert.match(REPORT_CONSENT,/Отправить.*администратору.*аккаунтом.*Пароли.*история посещений/);assert(!REPORT_ACCEPTED.includes('доставлен'));
   let complete,calls=0;const issue=createIssueFlow((command,data)=>{calls++;assert.equal(command,'markIssue');assert.equal(data.confirmed,true);return new Promise(resolve=>complete=resolve);});
   assert.equal(calls,0);const flight=issue.send();assert.equal(issue.busy,true);assert.equal(await issue.send(),null);assert.equal(calls,1);
   complete({ok:true,reportId:id,state:'queued'});assert.equal((await flight).ok,true);assert.equal(issue.busy,false);

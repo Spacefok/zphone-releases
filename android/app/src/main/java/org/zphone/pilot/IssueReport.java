@@ -18,21 +18,21 @@ final class IssueReport {
     static boolean canAppend(int count,int size,int length){return count<MAX_RECORDS&&(long)size+length<=MAX_BYTES;}
     private static final String UUID_PATTERN="[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}";
     private static Set<String> words(String value){return new HashSet<>(Arrays.asList(value.split(" ")));}
-    private static final Set<String> EVENTS=words("app.start app.error app.quit app.quit_requested system.resume user.mark user.connect user.disconnect user.diagnose notification.disconnect settings.changed connection.request connection.state connection.preflight connection.attempt_failed connection.failed connection.error connection.cleanup core.spawn core.spawn_error core.exit core.stop_requested core.api_error core.line_dropped core.stream_error naive.spawn naive.spawn_error naive.exit health.check health.failed health.proxy_ok recovery.request recovery.wait recovery.success recovery.failed recovery.preflight_failed recovery.attempt_failed recovery.cleanup_failed cleanup.failed diagnose.error network.error network.snapshot_failed traffic.totals traffic.error traffic.unavailable account.request report.accepted report.failed");
+    private static final Set<String> EVENTS=words("app.start app.error app.quit app.quit_requested system.resume user.mark user.connect user.disconnect user.diagnose notification.disconnect settings.changed connection.request connection.state connection.preflight connection.attempt_failed connection.failed connection.error connection.cleanup core.spawn core.spawn_error core.exit core.stop_requested core.api_error core.line_dropped core.stream_error naive.spawn naive.spawn_error naive.exit health.check health.failed health.proxy_ok recovery.request recovery.wait recovery.success recovery.failed recovery.preflight_failed recovery.attempt_failed recovery.cleanup_failed cleanup.failed diagnose.error network.error network.snapshot network.snapshot_failed traffic.totals traffic.error traffic.unavailable account.request report.accepted report.failed");
     private static final Map<String,Set<String>> ENUMS=new HashMap<>();
     static {
         ENUMS.put("platform",words("windows android"));
         ENUMS.put("status",words("off connecting checking recovering connected disconnecting error"));ENUMS.put("connectionStatus",ENUMS.get("status"));
         Set<String> locations=new HashSet<>(Countries.locationCodes());locations.add("auto");ENUMS.put("location",locations);ENUMS.put("protocol",words("auto TrustTunnel Mieru NaiveProxy AmneziaWG Hysteria2"));
-        ENUMS.put("mode",words("isolated vpn"));ENUMS.put("splitMode",words("all exclude include"));
-        ENUMS.put("operation",words("start poll redeem profiles logout report"));ENUMS.put("transport",words("system secure-dns"));ENUMS.put("phase",words("resolve request"));
-        ENUMS.put("stage",words("startup core helper tunnel health start proxy check connect launch api reachability android-tunnel vpn-reachability"));
-        ENUMS.put("reason",words("health system.resume core.exit naive.exit oversized"));ENUMS.put("signal",words("SIGTERM SIGKILL SIGINT"));ENUMS.put("stream",words("stdout stderr"));
+        ENUMS.put("mode",words("isolated vpn on off auto unknown"));ENUMS.put("splitMode",words("all exclude include"));ENUMS.put("networkType",words("wifi mobile ethernet vpn other none unknown"));
+        ENUMS.put("operation",words("start poll redeem profiles logout report parse request cleanup"));ENUMS.put("transport",words("system secure-dns proxy"));ENUMS.put("phase",words("resolve request"));
+        ENUMS.put("stage",words("startup core helper tunnel health start proxy check connect launch api reachability android-tunnel vpn-reachability probe cleanup"));
+        ENUMS.put("reason",words("health system.resume core.exit naive.exit oversized unavailable cancelled timeout"));ENUMS.put("signal",words("SIGTERM SIGKILL SIGINT"));ENUMS.put("stream",words("stdout stderr"));
         ENUMS.put("errorType",words("Error TypeError TimeoutError AbortError Exception IOException SocketException SocketTimeoutException UnknownHostException SSLException SSLHandshakeException ConnectException NetworkFailure"));
     }
     private static final Set<String> CODES=words("ETIMEDOUT ECONNRESET ENETUNREACH EHOSTUNREACH EPIPE ENOTFOUND EAI_AGAIN ECONNREFUSED UND_ERR_CONNECT_TIMEOUT UND_ERR_SOCKET ERR_NAME_NOT_RESOLVED ERR_CONNECTION_REFUSED ERR_CONNECTION_RESET ERR_CONNECTION_CLOSED ERR_CONNECTION_TIMED_OUT ERR_INTERNET_DISCONNECTED ERR_NETWORK_CHANGED NETWORK_ERROR DNS_ERROR DNS_NO_PUBLIC_ADDRESS IO_ERROR CONNECT_FAILED TLS_ERROR HTTP_ERROR AUTH_REJECTED ADMIN_REQUIRED VPN_CONFLICT ENOENT EACCES");
-    private static final Set<String> NUMBERS=words("durationMs delayMs latency attempt retryAttempt failures uploadBytes downloadBytes connections splitAppCount profileCount httpStatus exitCode count");
-    private static final Set<String> BOOLEANS=words("ok admin configRemoved coreStopped");
+    private static final Set<String> NUMBERS=words("durationMs delayMs latency attempt retryAttempt failures uploadBytes downloadBytes connections splitAppCount profileCount httpStatus exitCode count records");
+    private static final Set<String> BOOLEANS=words("ok admin configRemoved coreStopped enabled validated");
     private static final String[] SUMMARY={"version","build","platform","connectionStatus","location","protocol","mode","splitMode","splitAppCount","profileCount"};
     private static Map.Entry<String,Object> pair(String key,Object value){return new AbstractMap.SimpleImmutableEntry<>(key,value);}
     static Map.Entry<String,Object> field(String key,Object value){

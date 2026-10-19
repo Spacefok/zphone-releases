@@ -2,7 +2,7 @@ import {createAccountTransport} from './account-http.mjs';
 import {accessEndpoints,canRetryAccess} from '../shared/account-policy.mjs';
 import {createIssueReport,REPORT_BYTES,REPORT_WINDOW_MS,reportFailure} from './diagnostics-report.mjs';
 export class Account {
-  constructor({config,readToken,writeToken,transport=createAccountTransport()}){Object.assign(this,{config,readToken,writeToken,transport});this.pending=null;this.state={state:config?.baseUrl?'signed_out':'unconfigured'};}
+  constructor({config,readToken,writeToken,transport=createAccountTransport(),collectDiagnostics=async()=>{}}){Object.assign(this,{config,readToken,writeToken,transport,collectDiagnostics});this.pending=null;this.state={state:config?.baseUrl?'signed_out':'unconfigured'};}
   snapshot(){return {...this.state};}
   async call(route,data={},token){
     const endpoints=accessEndpoints(this.config);
@@ -54,10 +54,13 @@ export class Account {
   async sendReport(logger,metadata,now){
     const token=this.token;
     logger.write('user.mark',metadata);
+    const liveTime=now===undefined;
     now??=Date.now();
     try{
       if(!this.pendingReport||this.pendingReport.token!==token||now-this.pendingReport.time>REPORT_WINDOW_MS||now<this.pendingReport.time){
         this.clearReport();
+        try{await this.collectDiagnostics();}catch{logger.write('network.snapshot_failed',{stage:'probe'});}
+        if(liveTime)now=Date.now();
         this.pendingReport={token,time:now,body:await createIssueReport(logger,metadata,{now})};
         const pending=this.pendingReport;
         this.reportExpiry=setTimeout(()=>{if(this.pendingReport===pending)this.clearReport();},REPORT_WINDOW_MS);this.reportExpiry.unref();

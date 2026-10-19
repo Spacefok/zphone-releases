@@ -2,6 +2,12 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 const run=promisify(execFile);
 
+export async function reportNetworkType(){
+  const script=`$a=@(Get-NetAdapter -Physical | Where-Object Status -eq 'Up');$types=@($a|ForEach-Object {if($_.NdisPhysicalMedium -eq 9){'wifi'}elseif($_.NdisPhysicalMedium -eq 14){'ethernet'}else{'other'}});$type=if($types -contains 'wifi'){'wifi'}elseif($types -contains 'ethernet'){'ethernet'}elseif($types.Count){'other'}else{'none'};@{networkType=$type}|ConvertTo-Json -Compress`;
+  const result=await run('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,timeout:4500,maxBuffer:4096});
+  const data=JSON.parse(result.stdout);return {networkType:['wifi','ethernet','other','none'].includes(data.networkType)?data.networkType:'unknown'};
+}
+
 export function conflictingAdapters({adapters,routedInterfaces}) {
   if(!Array.isArray(adapters)||!Array.isArray(routedInterfaces)||!routedInterfaces.length)throw Error('Cannot verify the current network route');
   return adapters.filter(adapter=>{

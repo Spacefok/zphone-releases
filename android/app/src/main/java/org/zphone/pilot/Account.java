@@ -136,16 +136,18 @@ final class Account {
     JSONObject report(Diagnostics logger,JSONObject metadata,boolean confirmed) throws Exception {
         if(!confirmed)throw new Exception("Подтвердите отправку отчёта.");
         if(token==null)throw new Exception("Для отправки сбоя откройте «Аккаунт» и войдите через бота. Импорт файла не выполняет вход.");
+        final String owner=token;
         logger.write("user.mark",metadata);long now=System.currentTimeMillis();
         try{
             JSONObject body=pendingReport;
             if(body==null||!token.equals(reportOwner)||now-reportTime>IssueReport.WINDOW_MS||now<reportTime){
-                clearReport();body=logger.report(metadata,now);pendingReport=body;reportTime=now;reportOwner=token;
+                clearReport();ServiceProbe.collect(context,logger);if(closed||!owner.equals(token))throw new Exception("Аккаунт изменился. Повторите отправку.");now=System.currentTimeMillis();body=logger.report(metadata,now);pendingReport=body;reportTime=now;reportOwner=owner;
                 final JSONObject held=body;final java.util.Timer expiry=new java.util.Timer(true);reportExpiry=expiry;
                 expiry.schedule(new java.util.TimerTask(){public void run(){if(pendingReport==held)pendingReport=null;expiry.cancel();}},IssueReport.WINDOW_MS);
             }
             if(IssueReport.bytes(body)>IssueReport.MAX_BYTES)throw new Exception("Report too large");
-            JSONObject result=call("/v1/session/report",body,token);
+            if(closed||!owner.equals(token))throw new Exception("Аккаунт изменился. Повторите отправку.");
+            JSONObject result=call("/v1/session/report",body,owner);
             if(!IssueReport.accepted(result,body))throw new Exception("Invalid report acknowledgement");
             clearReport();logger.write("report.accepted",new JSONObject().put("ok",true));
             return new JSONObject().put("ok",true).put("reportId",result.getString("reportId")).put("state",result.getString("state"));

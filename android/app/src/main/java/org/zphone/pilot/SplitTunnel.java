@@ -21,6 +21,7 @@ final class SplitTunnel {
         return new JSONObject().put("mode",mode).put("apps",out);
     }
     static JSONObject read(Context context) throws Exception {
+        SettingsStore.initialize(context);
         return validate(new JSONObject(context.getSharedPreferences("settings",Context.MODE_PRIVATE).getString("split","{\"mode\":\"all\",\"apps\":[]}")));
     }
     static JSONArray apps(Context context) throws Exception {

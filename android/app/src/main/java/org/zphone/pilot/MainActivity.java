@@ -42,6 +42,7 @@ public class MainActivity extends Activity {
     private long importId=-1,vpnId=-1,exportId=-1,notificationId=-1;
     @Override public void onCreate(Bundle saved){
         super.onCreate(saved);
+        try{SettingsStore.initialize(this);}catch(Exception error){new android.app.AlertDialog.Builder(this).setTitle("Настройки Zphone").setMessage(error.getMessage()).setPositiveButton("Закрыть",(dialog,which)->finish()).setOnCancelListener(dialog->finish()).show();return;}
         synchronized(PROFILE_LOCK){MainActivity previous=current.get();if(previous!=null&&previous!=this)previous.retire();current=new WeakReference<>(this);}
         createProfileRefresh();
         worker.execute(()->{
@@ -109,6 +110,7 @@ public class MainActivity extends Activity {
         JSONObject value=new JSONObject().put("state",state.state);if(state.checkedAt>0)value.put("checkedAt",state.checkedAt);return value;
     }
     JSONObject settings() throws Exception {
+        SettingsStore.initialize(this);
         var prefs=getSharedPreferences("settings",MODE_PRIVATE);
         return new JSONObject().put("location",prefs.getString("location","auto")).put("protocol",prefs.getString("protocol","auto")).put("theme",prefs.getString("theme","system")).put("mode","vpn").put("split",SplitTunnel.read(this)).put("autoCheckUpdates",prefs.getBoolean("autoCheckUpdates",true)).put("autoDownloadUpdates",prefs.getBoolean("autoDownloadUpdates",false)).put("updateWifiOnly",prefs.getBoolean("updateWifiOnly",true));
     }
@@ -194,14 +196,7 @@ public class MainActivity extends Activity {
                             runOnUiThread(()->{if(destroyed)return;try{importId=id;Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(pick,102);}catch(Exception e){synchronized(PROFILE_LOCK){importPending=false;}profileRefresh.wake();reply(id,null,"Не удалось открыть импорт.");}});return;
                         case "settings":
                             if(TunnelService.running()&&(arg.has("location")||arg.has("protocol")||arg.has("split")))throw new Exception("Сначала отключите соединение.");
-                            var editor=getSharedPreferences("settings",MODE_PRIVATE).edit();
-                            for(String key:new String[]{"autoCheckUpdates","autoDownloadUpdates","updateWifiOnly"})if(arg.has(key)){if(!(arg.get(key) instanceof Boolean))throw new Exception("Некорректная настройка.");editor.putBoolean(key,arg.getBoolean(key));}
-                            if(arg.has("split"))editor.putString("split",SplitTunnel.validate(arg.getJSONObject("split")).toString());
-                            for(String key:new String[]{"location","protocol","theme"})if(arg.has(key)){
-                                String value=arg.getString(key);boolean valid=key.equals("location")?Countries.isSelection(arg.get(key)):key.equals("protocol")?(value.equals("auto")||Protocols.ALL.contains(value)):value.matches("system|light|dark");
-                                if(!valid)throw new Exception("Некорректные настройки.");editor.putString(key,value);
-                            }
-                            editor.apply();UpdateJob.schedule(MainActivity.this);Diagnostics.get(MainActivity.this).write("settings.changed",settings());result=snapshot();break;
+                            SettingsStore.update(MainActivity.this,arg);UpdateJob.schedule(MainActivity.this);result=snapshot();break;
                         case "diagnose":result=TunnelService.diagnose();break;
                         case "checkUpdates":result=UpdateCheck.check(MainActivity.this);break;
                         case "downloadUpdate":result=UpdateCheck.download(MainActivity.this);break;

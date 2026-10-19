@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class TunnelService extends VpnService {
     private static final String ACTION_STOP="org.zphone.pilot.STOP";
+    private static final String VPN_DNS_ADDRESS="198.18.0.2";
     private static volatile TunnelService instance;
     private static volatile JSONObject connection=object("status","off");
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
@@ -62,6 +63,16 @@ public class TunnelService extends VpnService {
     private String stage="startup";
     private static JSONObject object(String key,Object value){try{return new JSONObject().put(key,value);}catch(Exception e){throw new IllegalStateException(e);}}
     static JSONObject snapshot(){try{return new JSONObject(connection.toString());}catch(Exception e){return object("status","off");}}
+    static final class ProbeAccess {
+        private final TunnelService owner;private final int token;final int port;
+        ProbeAccess(TunnelService owner){this.owner=owner;this.token=owner.generation.get();this.port=owner.port;}
+        boolean valid(){return instance==owner&&owner.generation.get()==token&&connection.optString("status").equals("connected");}
+        JSONObject dns(String host,String type) throws Exception {
+            if(!valid()||!ServiceProbe.HOSTS.contains(host)||!type.matches("A|AAAA"))throw new Exception("Probe unavailable");
+            return owner.api("/dns/query?name="+URLEncoder.encode(host,"UTF-8")+"&type="+type,4500);
+        }
+    }
+    static ProbeAccess probeAccess(){TunnelService value=instance;return value!=null&&connection.optString("status").equals("connected")?new ProbeAccess(value):null;}
     static boolean running(){String s=connection.optString("status");return s.equals("connecting")||s.equals("checking")||s.equals("recovering")||s.equals("connected")||s.equals("disconnecting");}
     private static synchronized void publish(JSONObject next){connection=next;MainActivity.notifyState();}
     private void update(String status,JSONObject profile,Integer latency,String error){
@@ -157,6 +168,8 @@ public class TunnelService extends VpnService {
         JSONObject proxy=Protocols.proxy(p,naivePort);
         JSONObject dns=new JSONObject().put("enable",true).put("ipv6",Protocols.supportsIpv6(p)).put("respect-rules",true).put("enhanced-mode","redir-host").put("nameserver",new JSONArray().put("https://1.1.1.1/dns-query").put("https://1.0.0.1/dns-query")).put("proxy-server-nameserver",new JSONArray().put("https://1.1.1.1/dns-query"));
         JSONArray rules=new JSONArray().put("DST-PORT,53,Zphone-DNS");
+        // Only plain DNS reaches the local resolver; Android must not upgrade it to public DoT.
+        rules.put("IP-CIDR,"+VPN_DNS_ADDRESS+"/32,REJECT,no-resolve");
         if(!Protocols.supportsIpv6(p))rules.put("IP-CIDR6,::/0,REJECT,no-resolve");
         if(p.getString("protocol").equals("NaiveProxy"))rules.put("NETWORK,udp,REJECT");
         rules.put("MATCH,Zphone-Test");
@@ -215,7 +228,7 @@ public class TunnelService extends VpnService {
         }catch(Exception error){logger.write("network.snapshot_failed",object("errorType",error.getClass().getSimpleName()));}
     }
     private void startTunnel() throws Exception {
-        Builder builder=new Builder().setSession("Zphone").setMtu(1400).addAddress("198.18.0.1",30).addAddress("fd86:ea04:1111::1",126).addRoute("0.0.0.0",0).addRoute("::",0).addDnsServer("1.1.1.1");
+        Builder builder=new Builder().setSession("Zphone").setMtu(1400).addAddress("198.18.0.1",30).addAddress("fd86:ea04:1111::1",126).addRoute("0.0.0.0",0).addRoute("::",0).addDnsServer(VPN_DNS_ADDRESS);
         SplitTunnel.apply(this,builder);builder.setBlocking(false);tunnel=builder.establish();if(tunnel==null)throw new Exception("VPN permission revoked");
         String config="tunnel:\n  mtu: 1400\n  ipv4: 198.18.0.1\n  ipv6: 'fd86:ea04:1111::1'\nsocks5:\n  address: 127.0.0.1\n  port: "+port+"\n  udp: udp\nmisc:\n  log-level: error\n  log-file: /dev/null\n";
         tunnelFile=new File(getFilesDir(),"session/tunnel.yml");Files.write(tunnelFile.toPath(),config.getBytes(StandardCharsets.UTF_8));

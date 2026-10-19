@@ -10,20 +10,20 @@ user.mark user.connect user.disconnect user.diagnose notification.disconnect set
 connection.request connection.state connection.preflight connection.attempt_failed connection.failed connection.error connection.cleanup
 core.spawn core.spawn_error core.exit core.stop_requested core.api_error core.line_dropped core.stream_error naive.spawn naive.spawn_error naive.exit
 health.check health.failed health.proxy_ok recovery.request recovery.wait recovery.success recovery.failed recovery.preflight_failed recovery.attempt_failed recovery.cleanup_failed
-cleanup.failed diagnose.error network.error network.snapshot_failed traffic.totals traffic.error traffic.unavailable account.request report.accepted report.failed`.split(/\s+/));
+cleanup.failed diagnose.error network.error network.snapshot network.snapshot_failed traffic.totals traffic.error traffic.unavailable account.request report.accepted report.failed`.split(/\s+/));
 const enums={
   platform:['windows','android'],status:['off','connecting','checking','recovering','connected','disconnecting','error'],
   location:['auto',...LOCATION_CODES],protocol:['auto','TrustTunnel','Mieru','NaiveProxy','AmneziaWG','Hysteria2'],
-  mode:['isolated','vpn'],splitMode:['all','exclude','include'],
-  operation:['start','poll','redeem','profiles','logout','report'],transport:['system','secure-dns'],phase:['resolve','request'],
-  stage:['startup','core','helper','tunnel','health','start','proxy','check','connect','launch','api','reachability','android-tunnel','vpn-reachability'],
-  reason:['health','system.resume','core.exit','naive.exit','oversized'],signal:['SIGTERM','SIGKILL','SIGINT'],stream:['stdout','stderr'],
+  mode:['isolated','vpn','on','off','auto','unknown'],splitMode:['all','exclude','include'],networkType:['wifi','mobile','ethernet','vpn','other','none','unknown'],
+  operation:['start','poll','redeem','profiles','logout','report','parse','request','cleanup'],transport:['system','secure-dns','proxy'],phase:['resolve','request'],
+  stage:['startup','core','helper','tunnel','health','start','proxy','check','connect','launch','api','reachability','android-tunnel','vpn-reachability','probe','cleanup'],
+  reason:['health','system.resume','core.exit','naive.exit','oversized','unavailable','cancelled','timeout'],signal:['SIGTERM','SIGKILL','SIGINT'],stream:['stdout','stderr'],
   errorType:['Error','TypeError','TimeoutError','AbortError','Exception','IOException','SocketException','SocketTimeoutException','UnknownHostException','SSLException','SSLHandshakeException','ConnectException','NetworkFailure'],
 };
 enums.connectionStatus=enums.status;
 const codes=new Set('ETIMEDOUT ECONNRESET ENETUNREACH EHOSTUNREACH EPIPE ENOTFOUND EAI_AGAIN ECONNREFUSED UND_ERR_CONNECT_TIMEOUT UND_ERR_SOCKET ERR_NAME_NOT_RESOLVED ERR_CONNECTION_REFUSED ERR_CONNECTION_RESET ERR_CONNECTION_CLOSED ERR_CONNECTION_TIMED_OUT ERR_INTERNET_DISCONNECTED ERR_NETWORK_CHANGED NETWORK_ERROR DNS_ERROR DNS_NO_PUBLIC_ADDRESS IO_ERROR CONNECT_FAILED TLS_ERROR HTTP_ERROR AUTH_REJECTED ADMIN_REQUIRED VPN_CONFLICT ENOENT EACCES'.split(' '));
-const numbers=new Set('durationMs delayMs latency attempt retryAttempt failures uploadBytes downloadBytes connections splitAppCount profileCount httpStatus exitCode count'.split(' '));
-const bools=new Set(['ok','admin','configRemoved','coreStopped']);
+const numbers=new Set('durationMs delayMs latency attempt retryAttempt failures uploadBytes downloadBytes connections splitAppCount profileCount httpStatus exitCode count records'.split(' '));
+const bools=new Set(['ok','admin','configRemoved','coreStopped','enabled','validated']);
 const summaryKeys=['version','build','platform','connectionStatus','location','protocol','mode','splitMode','splitAppCount','profileCount'];
 export function reportFields(input={}){
   const out={};

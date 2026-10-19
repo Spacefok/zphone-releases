@@ -38,7 +38,7 @@ const root=path.resolve(__dirname,'..');
       assert.equal(await page.locator('[data-action="exportDiagnostics"]').count(),0);
       const calls=()=>page.evaluate(()=>window.testCalls.filter(x=>x.command==='markIssue').length);
       await page.locator('[data-action="markIssue"]').click();
-      assert.match(await page.locator('.sheet').innerText(),/3 минуты.*аккаунтом.*Пароли.*сайты/s);assert.equal(await calls(),0);
+      assert.match(await page.locator('.sheet').innerText(),/Отправить.*администратору.*аккаунтом.*Пароли.*история посещений/s);assert.equal(await calls(),0);
       await page.getByRole('button',{name:'Отмена',exact:true}).click();assert.equal(await calls(),0);
       await page.locator('[data-action="markIssue"]').click();await page.keyboard.press('Escape');assert.equal(await page.locator('.sheet').count(),0);assert.equal(await calls(),0);
       await page.evaluate(()=>window.changeAccount('signed_out'));await page.locator('[data-action="markIssue"]').click();

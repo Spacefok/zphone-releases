@@ -12,7 +12,10 @@ public final class IssueReportTest {
         check(!IssueReport.allowed(Instant.ofEpochMilli(now-180001),id,"health.check",now));
         check(!IssueReport.allowed(Instant.ofEpochMilli(now).plusNanos(1),id,"health.check",now));
         check(!IssueReport.allowed(Instant.ofEpochMilli(now),"bad","health.check",now));
-        for(String event:new String[]{"core.log","network.snapshot","visited.example","new.unknown.event"})check(!IssueReport.allowed(Instant.ofEpochMilli(now),id,event,now));
+        for(String event:new String[]{"core.log","visited.example","new.unknown.event"})check(!IssueReport.allowed(Instant.ofEpochMilli(now),id,event,now));
+        check(IssueReport.allowed(Instant.ofEpochMilli(now),id,"network.snapshot",now));
+        check(IssueReport.field("mode","auto")!=null);check(IssueReport.field("networkType","wifi")!=null);check(IssueReport.field("enabled",true)!=null);
+        check(IssueReport.field("privateDnsName","private.example")==null);check(IssueReport.field("stage","probe")!=null);check(IssueReport.field("records",2)!=null);
         for(String field:new String[]{"password","token","url","host","server","sni","message","path","apps","username","error","profile"})check(IssueReport.field(field,"private-secret") == null);
         for(String value:new String[]{"https://visited.example/path?token=secret","visited.example","C:\\Users\\Alice","/home/alice","secret-token"}){
             for(String field:new String[]{"location","protocol","stage","reason","errorCode","version","build"})check(IssueReport.field(field,value)==null);

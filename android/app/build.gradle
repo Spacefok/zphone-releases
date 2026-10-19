@@ -6,11 +6,12 @@ android {
         applicationId 'org.zphone.preview'
         minSdk 29
         targetSdk 34
-        versionCode 19
-        versionName '0.6.10'
+        versionCode 21
+        versionName '0.6.11'
         ndk { abiFilters 'arm64-v8a' }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    testOptions { unitTests.all { jvmArgs '-Dfile.encoding=UTF-8' } }
     packaging { jniLibs { useLegacyPackaging = true; keepDebugSymbols += ['**/libmihomo.so','**/libnaive.so'] } }
     signingConfigs {
         preview {
@@ -24,4 +25,8 @@ android {
     }
     buildTypes { release { minifyEnabled false; signingConfig signingConfigs.preview } }
 }
-dependencies { implementation files('libs/hev-socks5-tunnel.aar') }
+dependencies {
+    implementation files('libs/hev-socks5-tunnel.aar')
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+}
