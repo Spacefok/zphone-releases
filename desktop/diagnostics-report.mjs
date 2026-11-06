@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {LOCATION_CODES} from '../shared/countries.mjs';
+import {readProbeHistory} from './probe-history.mjs';
 
 export const REPORT_BYTES=196608,REPORT_WINDOW_MS=180000,REPORT_RECORDS=1000;
 export const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -68,9 +69,14 @@ export async function createIssueReport(logger,metadata,{now=Date.now(),reportId
     }catch(error){if(error.code!=='ENOENT')throw Error('Не удалось прочитать журнал. Повторите попытку.');}
     finally{await handle?.close();}
   }
+  // Preserve bounded probe results even if verbose core logs have rotated away.
+  records.push(...readProbeHistory(logger.directory,reportFields,now));
+  const seen=new Set();
   let size=Buffer.byteLength(JSON.stringify(report));
   records.sort((a,b)=>b.time.localeCompare(a.time));
   for(const row of records){
+    const key=JSON.stringify([row.time,row.session,row.event,Object.entries(row.data).sort(([a],[b])=>a.localeCompare(b))]);
+    if(seen.has(key))continue;seen.add(key);
     const length=Buffer.byteLength(JSON.stringify(row))+(report.records.length?1:0);
     if(report.records.length>=REPORT_RECORDS||size+length>REPORT_BYTES)break;
     report.records.push(row);size+=length;

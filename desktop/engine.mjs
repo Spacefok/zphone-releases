@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import {coreConfig,candidates,naiveConfig} from '../shared/profiles.mjs';
 import {profileCountry} from '../shared/countries.mjs';
+import {checkHealth} from './health-check.mjs';
 
 export async function freePort() {
   return new Promise((resolve,reject)=>{const s=net.createServer();s.on('error',reject);s.listen(0,'127.0.0.1',()=>{const port=s.address().port;s.close(()=>resolve(port));});});
@@ -166,14 +167,20 @@ export class Engine {
     }
     throw Error('NaiveProxy start timeout');
   }
-  async api(route,timeout=12000){
-    if(!this.active)throw Error('No connection');
-    const {apiPort,secret}=this.active;
+  async api(route,timeout=12000,active=this.active){
+    if(!active)throw Error('No connection');
+    const {apiPort,secret}=active;
     const response=await fetch(`http://127.0.0.1:${apiPort}${route}`,{headers:{Authorization:`Bearer ${secret}`},signal:AbortSignal.timeout(timeout)});
     if(!response.ok){const detail=(await response.text()).slice(0,2048);this.log('core.api_error',{route:route.split('?')[0],status:response.status,detail});throw Error('Network check failed');}return response.json();
   }
   async check(){
-    const result=await this.api('/proxies/Zphone-Test/delay?timeout=8000&url='+encodeURIComponent('https://www.gstatic.com/generate_204'),10000);
-    if(!Number.isFinite(result.delay)||result.delay<0)throw Error('Invalid check');this.log('health.proxy_ok',{latency:result.delay});return result.delay;
+    const active=this.active,generation=this.generation,route=this.state.route;
+    if(!active)throw Error('No connection');
+    const latency=await checkHealth({
+      request:async url=>(await this.api('/proxies/Zphone-Test/delay?timeout=8000&expected=200-299&url='+encodeURIComponent(url),10000,active)).delay,
+      valid:()=>this.active===active&&this.generation===generation,
+      record:facts=>this.log('health.check',{...facts,location:route?.location,protocol:route?.protocol}),
+    });
+    this.log('health.proxy_ok',{latency});return latency;
   }
 }

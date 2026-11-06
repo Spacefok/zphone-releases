@@ -50,10 +50,8 @@ export class ProfileRefresh {
     this.setState('retry');this.log('retry',{code,...(statusCode?{statusCode}:{})});this.cancelTimer();
     const delay=this.retryDelays[Math.min(this.attempt,this.retryDelays.length-1)]??300000;
     this.nextAt=this.now()+delay;
-    if(this.attempt<this.retryDelays.length){
-      this.attempt++;
-      this.timer=this.setTimer(()=>{this.timer=undefined;void this.wake();},delay);this.timer?.unref?.();
-    }
+    this.attempt=Math.min(this.attempt+1,this.retryDelays.length);
+    this.timer=this.setTimer(()=>{this.timer=undefined;void this.wake();},delay);this.timer?.unref?.();
   }
   wake(){return this.refresh();}
   refresh({manual=false}={}){

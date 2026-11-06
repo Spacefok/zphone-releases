@@ -44,15 +44,16 @@ test('no authorized session means no fetch, including a retained token with pend
   const f=fixture();f.account.token=null;await f.coordinator.wake();assert.equal(f.calls,0);
 });
 
-test('offline startup and transport failures preserve keys; backoff is bounded then event/cooldown driven',async()=>{
+test('offline startup retries automatically after a long outage with capped backoff and preserved keys',async()=>{
   const f=fixture();f.online=false;await f.coordinator.wake();assert.equal(f.calls,0);assert.equal(f.coordinator.snapshot().state,'retry');
   f.online=true;f.respond=async()=>{throw Error('private transport detail');};
   await f.advance(30000);assert.equal(f.calls,1);
   await f.advance(120000);assert.equal(f.calls,2);
-  await f.advance(300000);assert.equal(f.calls,3);assert.equal(f.timers.size,0);
+  await f.advance(300000);assert.equal(f.calls,3);assert.equal(f.timers.size,1);
   for(let i=0;i<20;i++)await f.coordinator.wake();assert.equal(f.calls,3);
-  await f.advance(300000);assert.equal(f.calls,3);
-  f.respond=async()=>ready();await f.coordinator.wake();assert.equal(f.calls,4);assert.equal(f.coordinator.snapshot().state,'current');
+  await f.advance(300000);assert.equal(f.calls,4);assert.equal(f.timers.size,1);
+  assert.equal(f.saved.profiles[0].id,'old');assert.equal(f.commits,0);
+  f.respond=async()=>ready();await f.advance(300000);assert.equal(f.calls,5);assert.equal(f.coordinator.snapshot().state,'current');assert.equal(f.timers.size,0);
   assert(!JSON.stringify(f.logs).includes('private transport detail'));
 });
 

@@ -239,7 +239,10 @@ public class MainActivity extends Activity {
         super.onRequestPermissionsResult(request,permissions,results);
         if(request==104){long id=notificationId;notificationId=-1;if(id!=-1)connect(id);notifyState();}
     }
-    @Override protected void onResume(){super.onResume();if(!destroyed&&current.get()==this){profileRefresh.wake();notifyState();}}
+    @Override protected void onResume(){super.onResume();if(!destroyed&&current.get()==this){
+        worker.execute(()->{try{SettingsStore.pruneSplit(this);}catch(Exception ignored){}publishState();});
+        profileRefresh.wake();notifyState();
+    }}
     private void retire(){synchronized(PROFILE_LOCK){destroyed=true;if(profileRefresh!=null)profileRefresh.close();if(account!=null)account.close();ui.removeCallbacksAndMessages(null);profileWorker.shutdownNow();worker.shutdownNow();}}
     @Override protected void onDestroy(){retire();if(current.get()==this)current.clear();web.removeJavascriptInterface("Android");web.destroy();super.onDestroy();}
 }

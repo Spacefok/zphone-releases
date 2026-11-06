@@ -4,9 +4,9 @@ const {createStartup,shouldStartHidden}=require('./startup.cjs');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const os=require('node:os');
-let window,engine,logger,networkTimer,updateTimer,trayController,profileRefresh,bundle=null,settings={location:'auto',protocol:'auto',theme:'system',mode:'isolated',startInTray:false,autoCheckUpdates:true,autoDownloadUpdates:false,split:{mode:'all',apps:[]}},quitting=false,showRequested=false;
+let window,engine,logger,networkTimer,updateTimer,trayController,profileRefresh,serviceProbes,bundle=null,settings={location:'auto',protocol:'auto',theme:'system',mode:'isolated',startInTray:false,autoCheckUpdates:true,autoDownloadUpdates:false,split:{mode:'all',apps:[]}},quitting=false,showRequested=false;
 const root=path.resolve(__dirname,'..');
-const build='windows-20261019.1';
+const build='windows-20261106.1';
 app.setName('Zphone');
 app.setPath('userData',path.join(app.getPath('appData'),'ZphonePreview'));
 if(!app.requestSingleInstanceLock()){app.quit();}
@@ -15,7 +15,7 @@ app.on('second-instance',()=>{showRequested=true;if(trayController)trayControlle
 app.whenReady().then(async()=>{
   const {Engine}=await import('./engine.mjs');
   const {windowsNetworkStatus,windowsNetworkDiagnostics,reportNetworkType}=await import('./windows-network.mjs');
-  const {collectServiceProbes}=await import('./service-probes.mjs');
+  const {collectServiceProbes,ServiceProbeMonitor}=await import('./service-probes.mjs');
   const {Diagnostics}=await import('./diagnostics.mjs');
   const {diagnosticName,saveDiagnostics}=await import('./diagnostics-export.mjs');
   const {VERSION,PROTOCOLS,validateBundle,publicProfiles,compareVersion}=await import('../shared/profiles.mjs');
@@ -57,7 +57,7 @@ app.whenReady().then(async()=>{
   };
   const accountVault=path.join(storage,'account.enc');
   account=new Account({config:updateConfig.auth,
-    collectDiagnostics:()=>collectServiceProbes({engine,logger,network:reportNetworkType}),
+    collectDiagnostics:()=>serviceProbes.capture(),
     transport:createAccountTransport({fetcher:(url,options)=>net.fetch(String(url),options),logger}),
     readToken:async()=>{try{return safeStorage.decryptString(await fs.readFile(accountVault));}catch{return null;}},
     writeToken:async token=>{if(!token){await fs.rm(accountVault,{force:true});return;}if(!safeStorage.isEncryptionAvailable())throw Error('Защищённое хранилище недоступно.');await fs.writeFile(accountVault,safeStorage.encryptString(token));}
@@ -78,9 +78,11 @@ app.whenReady().then(async()=>{
   };
   let profileConnectionStatus='off',online=net.isOnline();
   engine=new Engine({binary:path.join(runtime,'mihomo.exe'),directory:path.join(storage,'session'),onState:state=>{
+    serviceProbes?.stateChanged();
     notify();
     if(state.status!==profileConnectionStatus){profileConnectionStatus=state.status;if(['off','error'].includes(state.status))void profileRefresh?.wake();}
   },logger,beforeReconnect:preflight});
+  serviceProbes=new ServiceProbeMonitor({engine,collect:signal=>collectServiceProbes({engine,logger,network:reportNetworkType,signal})});
   profileRefresh=new ProfileRefresh({version:VERSION,account,marker:profileMarker,isIdle:()=>!busy(),isOnline:()=>net.isOnline(),notify,logger,
     prepare:async(imported,marker)=>{
       if(!safeStorage.isEncryptionAvailable())throw Error('Secure storage unavailable');
@@ -191,5 +193,5 @@ app.whenReady().then(async()=>{
   await window.loadFile(entry);if(!quitting){void profileRefresh.wake();const hidden=shouldStartHidden(settings,trayController)&&!showRequested;if(!hidden)window.show();logger.write('startup.ready',{hidden});}
 }).catch(error=>{if(quitting)return;logger?.write('app.error',{error});logger?.flush();dialog.showErrorBox('Zphone',error.message);app.quit();});
 app.on('window-all-closed',()=>app.quit());
-app.on('before-quit',event=>{if(quitting)return;event.preventDefault();quitting=true;clearInterval(networkTimer);clearInterval(updateTimer);logger?.write('app.quit_requested');Promise.resolve(profileRefresh?.shutdown()).then(()=>engine?.stop()).catch(error=>logger?.write('shutdown.error',{error})).finally(()=>{trayController?.dispose();logger?.write('app.quit');logger?.flush();app.quit();});});
+app.on('before-quit',event=>{if(quitting)return;event.preventDefault();quitting=true;clearInterval(networkTimer);clearInterval(updateTimer);serviceProbes?.close();logger?.write('app.quit_requested');Promise.resolve(profileRefresh?.shutdown()).then(()=>engine?.stop()).catch(error=>logger?.write('shutdown.error',{error})).finally(()=>{trayController?.dispose();logger?.write('app.quit');logger?.flush();app.quit();});});
 }

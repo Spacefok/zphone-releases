@@ -1,6 +1,7 @@
 package org.zphone.pilot;
 
 import android.content.Context;
+import android.util.AtomicFile;
 import org.json.JSONObject;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -11,7 +12,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 final class Diagnostics {
-    static final String VERSION="0.6.11",BUILD="android-20261019.1";
+    static final String VERSION="0.6.12",BUILD="android-20261106.1";
     private static Diagnostics instance;
     private final File directory;
     private final String session=UUID.randomUUID().toString();
@@ -22,7 +23,7 @@ final class Diagnostics {
     private static JSONObject clean(JSONObject input) throws Exception {
         JSONObject result=new JSONObject();
         // Only operational fields created by native code. Never accept profile objects or raw core output.
-        for(String key:new String[]{"version","build","status","location","protocol","stage","errorType","errorCode","httpStatus","operation","transport","phase","ok","durationMs","networkType","validated","otherVpn","reason","attempt","delayMs","latency","splitMode","splitAppCount","profileCount","records","skipped"}){
+        for(String key:new String[]{"version","build","status","connectionStatus","location","protocol","stage","errorType","errorCode","httpStatus","operation","transport","phase","ok","durationMs","networkType","validated","enabled","mode","otherVpn","reason","attempt","delayMs","latency","splitMode","splitAppCount","profileCount","count","records","skipped"}){
             Object value=input.opt(key);
             if(value instanceof Number||value instanceof Boolean)result.put(key,value);
             else if(value instanceof String){String text=(String)value;if(text.length()<=100&&text.matches("[A-Za-z0-9 .:_-]*"))result.put(key,text);}
@@ -32,14 +33,25 @@ final class Diagnostics {
     synchronized void write(String event,JSONObject data){
         try{
             if(!event.matches("[a-z._]{1,80}"))return;
-            byte[] bytes=(new JSONObject().put("time",Instant.now().toString()).put("session",session).put("event",event).put("data",clean(data)).toString()+"\n").getBytes(StandardCharsets.UTF_8);
+            JSONObject row=new JSONObject().put("time",IssueReport.timestamp(Instant.now())).put("session",session).put("event",event).put("data",clean(data));
+            byte[] bytes=(row.toString()+"\n").getBytes(StandardCharsets.UTF_8);
             File file=new File(directory,"diagnostics.jsonl");
             if(file.length()+bytes.length>LIMIT){
                 Files.deleteIfExists(new File(directory,"diagnostics."+(COUNT-1)+".jsonl").toPath());
                 for(int i=COUNT-2;i>=0;i--){File from=new File(directory,i==0?"diagnostics.jsonl":"diagnostics."+i+".jsonl");if(from.exists())Files.move(from.toPath(),new File(directory,"diagnostics."+(i+1)+".jsonl").toPath());}
             }
-            try(FileOutputStream stream=new FileOutputStream(file,true)){stream.write(bytes);}available=true;
+            try(FileOutputStream stream=new FileOutputStream(file,true)){stream.write(bytes);}
+            if(data.optString("stage").equals("probe")&&java.util.List.of("health.check","network.snapshot","network.snapshot_failed").contains(event))cacheProbe(row);
+            available=true;
         }catch(Exception e){available=false;}
+    }
+    private void cacheProbe(JSONObject row) throws Exception {
+        java.util.List<JSONObject> rows=new java.util.ArrayList<>(IssueReport.cached(directory,System.currentTimeMillis()));
+        row.put("data",IssueReport.fields(row.getJSONObject("data")));rows.add(row);
+        org.json.JSONArray data=new org.json.JSONArray(rows.subList(Math.max(0,rows.size()-128),rows.size()));
+        AtomicFile cache=new AtomicFile(new File(directory,"service-probes.json"));FileOutputStream stream=null;
+        try{stream=cache.startWrite();stream.write(data.toString().getBytes(StandardCharsets.UTF_8));cache.finishWrite(stream);}
+        catch(Exception error){if(stream!=null)cache.failWrite(stream);throw error;}
     }
     synchronized JSONObject snapshot() throws Exception {return new JSONObject().put("available",available).put("session",session);}
     synchronized JSONObject report(JSONObject metadata,long now) throws Exception {return IssueReport.collect(directory,COUNT,metadata,now,UUID.randomUUID().toString());}

@@ -45,7 +45,7 @@ final class ProfileRefresh<T> {
         final ArrayList<Completion> completions=new ArrayList<>();
         Request(long epoch,String scope){this.epoch=epoch;this.scope=scope;}
     }
-    private static final long[] RETRY_MS={5000,30000,120000};
+    private static final long[] RETRY_MS={5000,30000,120000,300000};
     private final Object lock;
     private final String version;
     private final Host<T> host;
@@ -89,13 +89,13 @@ final class ProfileRefresh<T> {
             }
             if(!manual&&marker!=null&&marker.matches(version,scope)){settled(marker);return;}
             if(host.blocked()){state("deferred",0);finish(completion,new Exception("Refresh deferred"));return;}
-            if(!manual&&(attempts>RETRY_MS.length||driver.now()<retryAt)){
+            if(!manual&&driver.now()<retryAt){
                 state("retry",0);
-                if(attempts<=RETRY_MS.length){driver.cancel();driver.later(this::wake,retryAt-driver.now());}
+                driver.cancel();driver.later(this::wake,retryAt-driver.now());
                 return;
             }
             if(manual){attempts=0;retryAt=0;deniedScope=null;}
-            driver.cancel();attempts++;
+            driver.cancel();attempts=Math.min(attempts+1,RETRY_MS.length);
             Request request=new Request(epoch,scope);flight=request;
             if(completion!=null)request.completions.add(completion);
             state("pending",0);
@@ -139,10 +139,8 @@ final class ProfileRefresh<T> {
                     if(status==401||status==403){deniedScope=request.scope;state("sign_in",0);}
                     else{
                         state("retry",0);
-                        if(attempts<=RETRY_MS.length){
-                            long delay=RETRY_MS[attempts-1];retryAt=driver.now()+delay;
-                            driver.later(this::wake,delay);
-                        }
+                        long delay=RETRY_MS[Math.max(0,attempts-1)];retryAt=driver.now()+delay;
+                        driver.later(this::wake,delay);
                     }
                 }
             }

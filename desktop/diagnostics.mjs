@@ -3,13 +3,15 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {StringDecoder} from 'node:string_decoder';
 import {isIP} from 'node:net';
+import {saveProbeHistory} from './probe-history.mjs';
+import {reportFields} from './diagnostics-report.mjs';
 
 const secretKey=/^(?:password|username|private[-_ ]?key|pre[-_ ]?shared[-_ ]?key|header[-_ ]?protection[-_ ]?key|obfs[-_ ]?password|secret|token|authorization|fingerprint|clientRandomPrefix)$/i;
 const publicHosts=new Set(['localhost','www.gstatic.com','www.cloudflare.com','example.com','1.1.1.1','1.0.0.1','8.8.8.8','127.0.0.1','0.0.0.0','::1']);
 export class Diagnostics {
   constructor(directory,{maxBytes=1024*1024,maxFiles=5}={}) {
     this.directory=directory;this.maxBytes=maxBytes;this.maxFiles=maxFiles;
-    this.secrets=new Set();this.pending=[];this.pendingBytes=0;this.timer=null;
+    this.secrets=new Set();this.pending=[];this.probePending=[];this.pendingBytes=0;this.timer=null;
     this.salt=crypto.randomBytes(32);this.session=crypto.randomUUID();this.available=true;
     try{fs.mkdirSync(directory,{recursive:true});}catch{this.available=false;}
   }
@@ -50,7 +52,9 @@ export class Diagnostics {
   }
   write(event,data={}){
     try{
-      const line=JSON.stringify({time:new Date().toISOString(),session:this.session,event,data:this.clean(data)})+'\n';
+      const row={time:new Date().toISOString(),session:this.session,event,data:this.clean(data)};
+      const line=JSON.stringify(row)+'\n';
+      if(data.stage==='probe'&&['health.check','network.snapshot','network.snapshot_failed'].includes(event))this.probePending.push(row);
       this.pending.push(line);this.pendingBytes+=Buffer.byteLength(line);
       if(this.pendingBytes>=65536||/error|failed|exit|quit|mark/.test(event))this.flush();
       else if(!this.timer){this.timer=setTimeout(()=>this.flush(),200);this.timer.unref();}
@@ -77,7 +81,7 @@ export class Diagnostics {
   flush(){
     clearTimeout(this.timer);this.timer=null;
     if(!this.pending.length)return;
-    const data=this.pending.join('');this.pending=[];this.pendingBytes=0;
+    const data=this.pending.join(''),probes=this.probePending;this.pending=[];this.probePending=[];this.pendingBytes=0;
     const file=path.join(this.directory,'diagnostics.jsonl');
     try{
       fs.mkdirSync(this.directory,{recursive:true});
@@ -86,7 +90,9 @@ export class Diagnostics {
         fs.rmSync(path.join(this.directory,`diagnostics.${this.maxFiles-1}.jsonl`),{force:true});
         for(let i=this.maxFiles-2;i>=0;i--){const from=path.join(this.directory,i?`diagnostics.${i}.jsonl`:'diagnostics.jsonl');if(fs.existsSync(from))fs.renameSync(from,path.join(this.directory,`diagnostics.${i+1}.jsonl`));}
       }
-      fs.appendFileSync(file,data,{mode:0o600});this.available=true;
+      fs.appendFileSync(file,data,{mode:0o600});
+      if(probes.length)saveProbeHistory(this.directory,probes,reportFields);
+      this.available=true;
     }catch{this.available=false;}
   }
 }

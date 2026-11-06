@@ -52,6 +52,13 @@ final class SettingsStore {
         try{storage.write(next);}catch(Exception e){try{storage.write(previous);}catch(Exception ignored){}throw e;}
         storage.backup(next);return next;
     }
+    static JSONObject pruneSplit(Storage storage,SplitTunnel.Installed installed) throws Exception {
+        JSONObject value=load(storage);
+        if(!value.has("split"))return value;
+        JSONObject previous=new JSONObject(value.getString("split")),clean=SplitTunnel.prune(previous,installed);
+        if(clean.getJSONArray("apps").length()==previous.getJSONArray("apps").length())return value;
+        return save(storage,new JSONObject().put("split",clean.toString()));
+    }
     private static Storage storage(Context context){
         SharedPreferences prefs=context.getSharedPreferences("settings",Context.MODE_PRIVATE);
         AtomicFile file=new AtomicFile(new File(context.getNoBackupFilesDir(),"settings-backup.json"));
@@ -81,15 +88,21 @@ final class SettingsStore {
     private static boolean initialized;
     static synchronized void initialize(Context context) throws Exception {
         if(initialized)return;
-        JSONObject value=load(storage(context));initialized=true;
+        JSONObject value=pruneSplit(storage(context),id->SplitTunnel.installed(context,id));initialized=true;
         log(context,value,"startup");
     }
     static synchronized void update(Context context,JSONObject input) throws Exception {
         initialize(context);JSONObject patch=new JSONObject(input.toString());
-        if(patch.has("split"))patch.put("split",SplitTunnel.validate(patch.getJSONObject("split")).toString());
+        if(patch.has("split"))patch.put("split",SplitTunnel.prune(patch.getJSONObject("split"),id->SplitTunnel.installed(context,id)).toString());
         JSONObject value=save(storage(context),patch);log(context,value,"cleanup");
     }
     static synchronized void checkpoint(Context context) throws Exception {initialize(context);load(storage(context));}
+    static synchronized void pruneSplit(Context context) throws Exception {
+        initialize(context);pruneSplit(storage(context),id->SplitTunnel.installed(context,id));
+    }
+    static synchronized void removePackage(Context context,String id) throws Exception {
+        initialize(context);JSONObject value=pruneSplit(storage(context),candidate->!candidate.equals(id));log(context,value,"cleanup");
+    }
     private static void log(Context context,JSONObject value,String stage) throws Exception {
         JSONObject split=new JSONObject(value.optString("split","{\"mode\":\"all\",\"apps\":[]}"));
         Diagnostics.get(context).write("settings.changed",new JSONObject().put("stage",stage).put("ok",true).put("splitMode",split.getString("mode")).put("splitAppCount",split.getJSONArray("apps").length()));

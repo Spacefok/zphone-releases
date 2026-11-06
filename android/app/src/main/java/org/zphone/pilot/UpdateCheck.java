@@ -92,7 +92,13 @@ final class UpdateCheck {
         if(!activity.getPackageManager().canRequestPackageInstalls()){activity.startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+activity.getPackageName())));return;}
         File file=new File(activity.getCacheDir(),"update.apk");verifyFile(activity,file);if(TunnelService.running())throw new Exception("Сначала отключите VPN.");
         var installer=activity.getPackageManager().getPackageInstaller();var params=new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);params.setAppPackageName(activity.getPackageName());if(android.os.Build.VERSION.SDK_INT>=31)params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED);
-        int id=installer.createSession(params);state("installing","");try(var session=installer.openSession(id)){try(var in=Files.newInputStream(file.toPath());var out=session.openWrite("base.apk",0,file.length())){in.transferTo(out);session.fsync(out);}var intent=new Intent(activity,UpdateReceiver.class);var pending=PendingIntent.getBroadcast(activity,id,intent,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_MUTABLE);session.commit(pending.getIntentSender());}catch(Exception e){installer.abandonSession(id);state("ready","Установка не завершена.");throw e;}
+        int id=installer.createSession(params);state("installing","");try(var session=installer.openSession(id)){
+            try(var in=Files.newInputStream(file.toPath());var out=session.openWrite("base.apk",0,file.length())){
+                byte[] buffer=new byte[65536];int count;while((count=in.read(buffer))!=-1)out.write(buffer,0,count);
+                session.fsync(out);
+            }
+            var intent=new Intent(activity,UpdateReceiver.class);var pending=PendingIntent.getBroadcast(activity,id,intent,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_MUTABLE);session.commit(pending.getIntentSender());
+        }catch(Exception e){installer.abandonSession(id);state("ready","Установка не завершена.");throw e;}
     }
     static void installFailed(){try{state("ready","Установка не завершена.");}catch(Exception ignored){}}
 }

@@ -18,7 +18,7 @@ test('Android refresh policy runs offline with injectable session, VPN, storage 
   });
   execFileSync(javac,['-encoding','UTF-8','-d',out,source+'ProfileRefresh.java','test/java/ProfileRefreshTest.java'],{windowsHide:true,timeout:30000});
   const result=execFileSync(java,['-cp',out,'org.zphone.pilot.ProfileRefreshTest'],{windowsHide:true,encoding:'utf8',timeout:10000});
-  assert.match(result,/Profile refresh: 31 tests passed/);t.diagnostic(result.trim());
+  assert.match(result,/Profile refresh: 32 tests passed/);t.diagnostic(result.trim());
   const sdks=[process.env.ANDROID_HOME,process.env.ANDROID_SDK_ROOT,process.platform==='win32'?path.join(process.env.LOCALAPPDATA,'ZphoneBuild/android-sdk'):null].filter(Boolean);
   const android=sdks.map(sdk=>path.join(sdk,'platforms/android-34/android.jar')).find(file=>fs.existsSync(file));
   if(!android){t.diagnostic('No Android SDK: atomic vault JVM checks not run');return;}

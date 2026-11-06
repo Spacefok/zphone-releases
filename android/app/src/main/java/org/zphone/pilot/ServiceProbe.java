@@ -12,7 +12,16 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 final class ServiceProbe {
-    static final List<String> HOSTS=List.of("www.google.com","gemini.google.com","www.youtube.com","www.amazon.com");
+    static final List<String> HOSTS=List.of("www.google.com","gemini.google.com","www.youtube.com","www.amazon.com","music.youtube.com","discord.com","gateway.discord.gg");
+    private static final ExecutorService collector=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"zphone-probe-history");t.setDaemon(true);return t;});
+    private static CompletableFuture<Void> inFlight;
+    static synchronized CompletableFuture<Void> schedule(Context context,Diagnostics logger){
+        if(inFlight==null||inFlight.isDone()){
+            Context app=context.getApplicationContext();var access=TunnelService.probeAccess();
+            inFlight=CompletableFuture.runAsync(()->collectNow(app,logger,access),collector);
+        }
+        return inFlight;
+    }
     private static void network(Context context,Diagnostics logger) throws Exception {
         ConnectivityManager manager=(ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);
         String mode="unknown";
@@ -58,17 +67,19 @@ final class ServiceProbe {
         finally{connection.disconnect();}
     }
     private static JSONObject sample(TunnelService.ProbeAccess access,int id,String transport,String phase,Callable<JSONObject> probe) throws Exception {
-        long start=System.nanoTime();JSONObject data=new JSONObject().put("stage","probe").put("attempt",id).put("transport",transport).put("phase",phase);
+        long start=System.nanoTime();JSONObject data=new JSONObject().put("stage","probe").put("attempt",id).put("transport",transport).put("phase",phase).put("location",access.location).put("protocol",access.protocol);
         try{if(!access.valid())throw new ConnectException();JSONObject result=probe.call();for(var keys=result.keys();keys.hasNext();){String key=keys.next();data.put(key,result.get(key));}data.put("ok",true);}
         catch(Exception error){data.put("ok",false).put("errorCode",NetworkFailure.code(error));}
         if(!access.valid())data.put("ok",false).put("reason","cancelled");
         return data.put("durationMs",(System.nanoTime()-start)/1000000);
     }
     static void collect(Context context,Diagnostics logger){
+        try{schedule(context,logger).get(20,TimeUnit.SECONDS);}catch(Exception ignored){try{logger.write("health.check",new JSONObject().put("stage","probe").put("ok",false).put("reason","timeout"));}catch(Exception ignoredAgain){}}
+    }
+    private static void collectNow(Context context,Diagnostics logger,TunnelService.ProbeAccess access){
         ExecutorService pool=Executors.newFixedThreadPool(12,r->{Thread t=new Thread(r,"zphone-report-probe");t.setDaemon(true);return t;});
         try{
             try{network(context,logger);}catch(Exception ignored){logger.write("network.snapshot_failed",new JSONObject().put("stage","probe"));}
-            var access=TunnelService.probeAccess();
             if(access==null){logger.write("health.check",new JSONObject().put("stage","probe").put("ok",false).put("reason","unavailable"));return;}
             List<Callable<JSONObject>> tasks=new ArrayList<>();
             for(int i=0;i<HOSTS.size();i++){
@@ -78,8 +89,10 @@ final class ServiceProbe {
                 // The app itself is excluded from Android VPN; HTTPS must explicitly use its proxy.
                 tasks.add(()->sample(access,id,"proxy","request",()->https(access,host)));
             }
-            for(var result:pool.invokeAll(tasks,15,TimeUnit.SECONDS)){
-                if(result.isCancelled())logger.write("health.check",new JSONObject().put("stage","probe").put("ok",false).put("reason","timeout"));
+            var results=pool.invokeAll(tasks,15,TimeUnit.SECONDS);
+            for(int i=0;i<results.size();i++){
+                var result=results.get(i);
+                if(result.isCancelled())logger.write("health.check",new JSONObject().put("stage","probe").put("attempt",i/3+1).put("transport",i%3==0?"system":"proxy").put("phase",i%3==2?"request":"resolve").put("location",access.location).put("protocol",access.protocol).put("ok",false).put("reason",access.valid()?"timeout":"cancelled"));
                 else logger.write("health.check",result.get());
             }
         }catch(Exception ignored){try{logger.write("network.snapshot_failed",new JSONObject().put("stage","probe"));}catch(Exception ignoredAgain){}}

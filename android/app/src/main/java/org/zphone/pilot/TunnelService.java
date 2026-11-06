@@ -64,12 +64,12 @@ public class TunnelService extends VpnService {
     private static JSONObject object(String key,Object value){try{return new JSONObject().put(key,value);}catch(Exception e){throw new IllegalStateException(e);}}
     static JSONObject snapshot(){try{return new JSONObject(connection.toString());}catch(Exception e){return object("status","off");}}
     static final class ProbeAccess {
-        private final TunnelService owner;private final int token;final int port;
-        ProbeAccess(TunnelService owner){this.owner=owner;this.token=owner.generation.get();this.port=owner.port;}
-        boolean valid(){return instance==owner&&owner.generation.get()==token&&connection.optString("status").equals("connected");}
+        private final TunnelService owner;private final int token,apiPort;private final String secret;private final ChildProcess core;final int port;final String location,protocol;
+        ProbeAccess(TunnelService owner){this.owner=owner;this.token=owner.generation.get();this.port=owner.port;this.apiPort=owner.apiPort;this.secret=owner.secret;this.core=owner.core;JSONObject route=connection.optJSONObject("route");location=route==null?"":route.optString("location");protocol=route==null?"":route.optString("protocol");}
+        boolean valid(){return instance==owner&&owner.core==core&&owner.generation.get()==token&&connection.optString("status").equals("connected");}
         JSONObject dns(String host,String type) throws Exception {
             if(!valid()||!ServiceProbe.HOSTS.contains(host)||!type.matches("A|AAAA"))throw new Exception("Probe unavailable");
-            return owner.api("/dns/query?name="+URLEncoder.encode(host,"UTF-8")+"&type="+type,4500);
+            return owner.api("/dns/query?name="+URLEncoder.encode(host,"UTF-8")+"&type="+type,4500,apiPort,secret);
         }
     }
     static ProbeAccess probeAccess(){TunnelService value=instance;return value!=null&&connection.optString("status").equals("connected")?new ProbeAccess(value):null;}
@@ -204,6 +204,9 @@ public class TunnelService extends VpnService {
         android.util.Log.w("ZphoneTest",detail.substring(0,Math.min(detail.length(),1200)));
     }
     private JSONObject api(String route,int timeout) throws Exception {
+        return api(route,timeout,apiPort,secret);
+    }
+    private JSONObject api(String route,int timeout,int apiPort,String secret) throws Exception {
         HttpURLConnection connection=(HttpURLConnection)new URL("http://127.0.0.1:"+apiPort+route).openConnection();
         connection.setRequestProperty("Authorization","Bearer "+secret);connection.setConnectTimeout(timeout);connection.setReadTimeout(timeout);
         try{
@@ -217,9 +220,15 @@ public class TunnelService extends VpnService {
         while((n=stream.read(buffer))!=-1){if(output.size()+n>limit)throw new Exception("Файл слишком большой.");output.write(buffer,0,n);}return output.toByteArray();
     }
     private int health() throws Exception {
-        long started=SystemClock.elapsedRealtime();
-        try{int latency=api("/proxies/Zphone-Test/delay?timeout=8000&url="+URLEncoder.encode("https://www.gstatic.com/generate_204","UTF-8"),10000).getInt("delay");logger.write("health.check",new JSONObject().put("ok",true).put("durationMs",SystemClock.elapsedRealtime()-started).put("latency",latency));return latency;}
-        catch(Exception error){JSONObject info=new JSONObject().put("ok",false).put("stage",stage).put("errorType",error.getClass().getSimpleName()).put("errorCode",NetworkFailure.code(error)).put("durationMs",SystemClock.elapsedRealtime()-started);if(error instanceof NetworkFailure)info.put("httpStatus",((NetworkFailure)error).httpStatus);logger.write("health.check",info);throw error;}
+        final int token=generation.get(),apiPort=this.apiPort;final String secret=this.secret;final ChildProcess captured=core;final JSONObject route=connection.optJSONObject("route");
+        return HealthCheck.check(url->api("/proxies/Zphone-Test/delay?timeout=8000&expected=200-299&url="+URLEncoder.encode(url,"UTF-8"),10000,apiPort,secret).getInt("delay"),
+            ()->generation.get()==token&&core==captured&&captured!=null,result->{
+                try{JSONObject data=new JSONObject().put("stage","health").put("attempt",result.target).put("transport","proxy").put("phase","request").put("ok",result.error==null).put("durationMs",result.durationMs);
+                    if(route!=null)data.put("location",route.optString("location")).put("protocol",route.optString("protocol"));
+                    if(result.error==null)data.put("latency",result.latency);else data.put("errorCode",NetworkFailure.code(result.error));
+                    logger.write("health.check",data);
+                }catch(Exception ignored){}
+            });
     }
     private void logNetwork(){
         try{ConnectivityManager manager=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);NetworkCapabilities caps=manager.getNetworkCapabilities(manager.getActiveNetwork());
@@ -237,8 +246,9 @@ public class TunnelService extends VpnService {
         synchronized(traffic){traffic.beginTunnel(SystemClock.elapsedRealtime());tunnelStarted=true;}
     }
     private void monitor(int token,JSONObject p){new Thread(()->{
-        int failures=0,ticks=0;
+        int failures=0,ticks=0;long nextProbe=0;
         while(token==generation.get()){
+            if(SystemClock.elapsedRealtime()>=nextProbe){ServiceProbe.schedule(this,logger);nextProbe=SystemClock.elapsedRealtime()+60000;}
             try{Thread.sleep(5000);if(token!=generation.get())return;if(core==null||!core.isAlive()||(naive!=null&&!naive.isAlive())||!TProxyService.TProxyIsRunning())throw new Exception("Core stopped");if(++ticks%6!=0)continue;int latency=health();failures=0;if(token==generation.get())update("connected",p,latency,null);}
             catch(Exception e){
                 if(token!=generation.get())return;

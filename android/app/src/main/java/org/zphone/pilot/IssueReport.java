@@ -67,6 +67,20 @@ final class IssueReport {
         return out;
     }
     private static void copy(JSONObject target,JSONObject source) throws Exception {for(Iterator<String> it=source.keys();it.hasNext();){String key=it.next();target.put(key,source.get(key));}}
+    static List<JSONObject> cached(File directory,long now){
+        List<JSONObject> rows=new ArrayList<>();
+        try{
+            File file=new File(directory,"service-probes.json");
+            if(!file.isFile()||Files.isSymbolicLink(file.toPath())||file.length()>131072)return rows;
+            JSONArray input=new JSONArray(new String(Files.readAllBytes(file.toPath()),StandardCharsets.UTF_8));
+            for(int i=0;i<input.length();i++){
+                JSONObject row=input.getJSONObject(i),data=row.getJSONObject("data");String event=row.getString("event");
+                if(!words("health.check network.snapshot network.snapshot_failed").contains(event)||!data.optString("stage").equals("probe")||!allowed(Instant.parse(row.getString("time")),row.getString("session"),event,now))continue;
+                rows.add(new JSONObject().put("time",timestamp(Instant.parse(row.getString("time")))).put("session",row.getString("session")).put("event",event).put("data",fields(data)));
+            }
+        }catch(Exception ignored){}
+        return rows.subList(Math.max(0,rows.size()-128),rows.size());
+    }
     static JSONObject collect(File directory,int count,JSONObject metadata,long now,String reportId) throws Exception {
         if(reportId==null||!reportId.matches(UUID_PATTERN))throw new Exception("Invalid report identity");
         Instant end=Instant.ofEpochMilli(now);
@@ -85,10 +99,15 @@ final class IssueReport {
                 }catch(Exception ignored){}}
             }
         }
+        records.addAll(cached(directory,now));
         records.sort((a,b)->Instant.parse(b.optString("time")).compareTo(Instant.parse(a.optString("time"))));
+        Set<String> seen=new HashSet<>();
         int size=bytes(report);List<JSONObject> newest=new ArrayList<>();
         for(JSONObject row:records){
             row.put("time",timestamp(Instant.parse(row.getString("time"))));
+            JSONObject data=row.getJSONObject("data");Map<String,Object> ordered=new TreeMap<>();for(Iterator<String> it=data.keys();it.hasNext();){String key=it.next();ordered.put(key,data.get(key));}
+            String identity=row.getString("time")+row.getString("session")+row.getString("event")+ordered;
+            if(!seen.add(identity))continue;
             int length=bytes(row)+(newest.isEmpty()?0:1);if(!canAppend(newest.size(),size,length))break;newest.add(row);size+=length;
         }
         Collections.reverse(newest);for(JSONObject row:newest)output.put(row);
