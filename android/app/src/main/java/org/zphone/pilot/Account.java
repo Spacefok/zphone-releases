@@ -20,6 +20,8 @@ import java.util.List;
 final class Account {
     private final Context context;
     private final Object guard;
+    private final Object reportGuard=new Object();
+    private final BoundedRequest requests=new BoundedRequest();
     private volatile JSONObject pending;
     private volatile JSONObject pendingReport;
     private java.util.Timer reportExpiry;
@@ -41,7 +43,7 @@ final class Account {
     Account(Context context,Object guard) throws Exception {this.context=context.getApplicationContext();this.guard=guard;if(config().optString("baseUrl","").startsWith("https://")){token=load();session=token==null?null:new Session(token);state=token==null?"signed_out":"authorized";}}
     Session session(){return session;}
     void cancelPending(){synchronized(guard){generation++;}}
-    void close(){synchronized(guard){closed=true;generation++;}}
+    void close(){synchronized(guard){closed=true;generation++;}requests.close();clearReport();}
     private JSONObject config() throws Exception {return UpdateCheck.config(context).getJSONObject("auth");}
     JSONObject snapshot() throws Exception {JSONObject p=pending;JSONObject out=new JSONObject().put("state",state).put("message",message);if(p!=null)out.put("number",p.getString("number")).put("expires",p.getLong("expires"));return out;}
     private SecretKey key() throws Exception {
@@ -65,6 +67,7 @@ final class Account {
         List<String> endpoints=AccessEndpoints.validate(values);
         if(preferred!=null&&endpoints.remove(preferred))endpoints.add(0,preferred);
         for(int index=0;index<endpoints.size();index++){
+            if(closed||Thread.currentThread().isInterrupted())throw new java.util.concurrent.CancellationException();
             try{JSONObject result=request(endpoints.get(index),route,data,bearer,index);preferred=endpoints.get(index);return result;}
             catch(AccessFailure error){if(index==endpoints.size()-1||!AccessEndpoints.retry(route,error.status,error.code,error.received))throw error;}
         }
@@ -78,17 +81,22 @@ final class Account {
     private JSONObject request(String base,String route,JSONObject data,String bearer,int attempt) throws Exception {
         URL url=new URL(new URL(base),route);
         HttpURLConnection connection=(HttpURLConnection)url.openConnection();connection.setInstanceFollowRedirects(false);connection.setConnectTimeout(6000);connection.setReadTimeout(6000);connection.setRequestMethod("POST");connection.setDoOutput(true);connection.setRequestProperty("Content-Type","application/json");if(bearer!=null)connection.setRequestProperty("Authorization","Bearer "+bearer);
-        long started=android.os.SystemClock.elapsedRealtime();int status=0;boolean received=false;String operation=route.substring(route.lastIndexOf('/')+1);
+        long started=android.os.SystemClock.elapsedRealtime();String operation=route.substring(route.lastIndexOf('/')+1);
+        java.util.concurrent.atomic.AtomicInteger responseStatus=new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicBoolean responseReceived=new java.util.concurrent.atomic.AtomicBoolean();
         try{
+            JSONObject result=requests.run(()->{try{
             try(var stream=connection.getOutputStream()){stream.write(data.toString().getBytes(StandardCharsets.UTF_8));}
-            status=connection.getResponseCode();
+            int status=connection.getResponseCode();responseStatus.set(status);
             if(status!=200)throw new Exception(status==429?"Слишком много попыток входа. Подождите минуту.":"Сервис входа недоступен или заявка истекла.");
-            received=true;
+            responseReceived.set(true);
             try(var stream=connection.getInputStream()){
-                JSONObject result=new JSONObject(new String(TunnelService.readBounded(stream,150000),StandardCharsets.UTF_8));
-                Diagnostics.get(context).write("account.request",new JSONObject().put("operation",operation).put("attempt",attempt).put("ok",true).put("durationMs",android.os.SystemClock.elapsedRealtime()-started));return result;
+                return new JSONObject(new String(TunnelService.readBounded(stream,150000),StandardCharsets.UTF_8));
             }
+            }finally{connection.disconnect();}},10000,connection::disconnect);
+            Diagnostics.get(context).write("account.request",new JSONObject().put("operation",operation).put("attempt",attempt).put("ok",true).put("durationMs",android.os.SystemClock.elapsedRealtime()-started));return result;
         }catch(Exception error){
+            int status=responseStatus.get();boolean received=responseReceived.get();
             String code=NetworkFailure.code(error),text="Не удалось связаться с сервисом входа. Попробуйте другую сеть или отправьте диагностику в поддержку.";
             Diagnostics.get(context).write("account.request",new JSONObject().put("operation",operation).put("attempt",attempt).put("ok",false).put("status",status).put("errorCode",code).put("errorType",error.getClass().getSimpleName()).put("durationMs",android.os.SystemClock.elapsedRealtime()-started));
             if(status==429)text="Слишком много попыток входа. Подождите минуту.";
@@ -97,7 +105,7 @@ final class Account {
             else if(error instanceof javax.net.ssl.SSLException)text="Не удалось проверить защищённое соединение. Проверьте дату и время устройства; не отключайте проверку сертификатов.";
             else if(error instanceof java.net.SocketTimeoutException)text="Сервис входа не ответил вовремя. Попробуйте другую сеть и повторите вход.";
             throw new AccessFailure(text,status,code,received);
-        }finally{connection.disconnect();}
+        }
     }
     String begin() throws Exception {
         String bot=config().optString("botUsername","");if(!bot.matches("[A-Za-z0-9_]{5,32}"))throw new Exception("Вход через бота ещё не настроен.");
@@ -132,29 +140,35 @@ final class Account {
         if(session!=captured||closed)throw new Exception("Account changed");
         if(!result.optString("state").equals("ready"))throw new Exception("Доступ одобрен, подключения ещё готовятся.");return result.getJSONObject("bundle");
     }
-    private void clearReport(){if(reportExpiry!=null){reportExpiry.cancel();reportExpiry=null;}pendingReport=null;reportOwner=null;}
+    private void clearReport(){synchronized(reportGuard){if(reportExpiry!=null){reportExpiry.cancel();reportExpiry=null;}pendingReport=null;reportOwner=null;}}
     JSONObject report(Diagnostics logger,JSONObject metadata,boolean confirmed) throws Exception {
         if(!confirmed)throw new Exception("Подтвердите отправку отчёта.");
-        if(token==null)throw new Exception("Для отправки сбоя откройте «Аккаунт» и войдите через бота. Импорт файла не выполняет вход.");
         final String owner=token;
+        if(owner==null)throw new Exception("Для отправки сбоя откройте «Аккаунт» и войдите через бота. Импорт файла не выполняет вход.");
         logger.write("user.mark",metadata);long now=System.currentTimeMillis();
+        JSONObject body;
+        synchronized(reportGuard){body=pendingReport;if(!owner.equals(reportOwner)||now-reportTime>IssueReport.WINDOW_MS||now<reportTime)body=null;}
         try{
-            JSONObject body=pendingReport;
-            if(body==null||!token.equals(reportOwner)||now-reportTime>IssueReport.WINDOW_MS||now<reportTime){
-                clearReport();ServiceProbe.collect(context,logger);if(closed||!owner.equals(token))throw new Exception("Аккаунт изменился. Повторите отправку.");now=System.currentTimeMillis();body=logger.report(metadata,now);pendingReport=body;reportTime=now;reportOwner=owner;
+            if(body==null){
+                ServiceProbe.collect(context,logger);if(closed||!owner.equals(token))throw new Exception("Аккаунт изменился. Повторите отправку.");now=System.currentTimeMillis();body=logger.report(metadata,now);
+                synchronized(reportGuard){
+                if(closed||!owner.equals(token))throw new Exception("Аккаунт изменился. Повторите отправку.");
+                clearReport();pendingReport=body;reportTime=now;reportOwner=owner;
                 final JSONObject held=body;final java.util.Timer expiry=new java.util.Timer(true);reportExpiry=expiry;
-                expiry.schedule(new java.util.TimerTask(){public void run(){if(pendingReport==held)pendingReport=null;expiry.cancel();}},IssueReport.WINDOW_MS);
+                expiry.schedule(new java.util.TimerTask(){public void run(){synchronized(reportGuard){if(pendingReport==held)clearReport();}expiry.cancel();}},IssueReport.WINDOW_MS);
+                }
             }
             if(IssueReport.bytes(body)>IssueReport.MAX_BYTES)throw new Exception("Report too large");
             if(closed||!owner.equals(token))throw new Exception("Аккаунт изменился. Повторите отправку.");
             JSONObject result=call("/v1/session/report",body,owner);
+            if(closed||!owner.equals(token))throw new Exception("Аккаунт изменился. Повторите отправку.");
             if(!IssueReport.accepted(result,body))throw new Exception("Invalid report acknowledgement");
-            clearReport();logger.write("report.accepted",new JSONObject().put("ok",true));
+            synchronized(reportGuard){if(pendingReport==body)clearReport();}logger.write("report.accepted",new JSONObject().put("ok",true));
             return new JSONObject().put("ok",true).put("reportId",result.getString("reportId")).put("state",result.getString("state"));
         }catch(Exception error){
             int status=error instanceof AccessFailure?((AccessFailure)error).status:0;
             String code=error instanceof AccessFailure?((AccessFailure)error).code:NetworkFailure.code(error);
-            if(status==401||status==403)clearReport();
+            if(status==401||status==403)synchronized(reportGuard){if(pendingReport==body)clearReport();}
             logger.write("report.failed",new JSONObject().put("status",status).put("errorCode",code));
             throw new Exception(IssueReport.failure(status,code));
         }

@@ -38,6 +38,7 @@ public class MainActivity extends Activity {
     private Runnable refreshRetry;
     private final ExecutorService profileWorker=Executors.newSingleThreadExecutor();
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
+    private final ExecutorService reportWorker=Executors.newSingleThreadExecutor();
     private final java.util.concurrent.atomic.AtomicBoolean reportBusy=new java.util.concurrent.atomic.AtomicBoolean();
     private long importId=-1,vpnId=-1,exportId=-1,notificationId=-1;
     @Override public void onCreate(Bundle saved){
@@ -116,7 +117,7 @@ public class MainActivity extends Activity {
     }
     JSONObject snapshot() throws Exception {
         NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);var channel=manager.getNotificationChannel("vpn");
-        return new JSONObject().put("version",Diagnostics.VERSION).put("build",Diagnostics.BUILD).put("platform","android").put("settings",settings()).put("updates",UpdateCheck.snapshot()).put("account",account==null?new JSONObject().put("state","unconfigured"):account.snapshot()).put("profiles",publicProfiles).put("profileSync",profileSync()).put("diagnostics",Diagnostics.get(this).snapshot()).put("notificationsEnabled",manager.areNotificationsEnabled()&&(channel==null||channel.getImportance()!=NotificationManager.IMPORTANCE_NONE)).put("connection",TunnelService.snapshot());
+        return new JSONObject().put("version",getPackageManager().getPackageInfo(getPackageName(),0).versionName).put("build",Diagnostics.BUILD).put("platform","android").put("settings",settings()).put("updates",UpdateCheck.snapshot()).put("account",account==null?new JSONObject().put("state","unconfigured"):account.snapshot()).put("profiles",publicProfiles).put("profileSync",profileSync()).put("diagnostics",Diagnostics.get(this).snapshot()).put("notificationsEnabled",manager.areNotificationsEnabled()&&(channel==null||channel.getImportance()!=NotificationManager.IMPORTANCE_NONE)).put("connection",TunnelService.snapshot());
     }
     private void reply(long id,Object result,String error){runOnUiThread(()->{if(destroyed||current.get()!=this)return;try{JSONObject payload=new JSONObject();if(error!=null)payload.put("error",error);else payload.put("result",result);web.evaluateJavascript("window.zphoneReply&&window.zphoneReply("+id+","+payload+")",null);}catch(Exception ignored){}});}
     boolean anotherVpn(){
@@ -155,7 +156,7 @@ public class MainActivity extends Activity {
                 }
             }
             if(command.equals("markIssue")&&!reportBusy.compareAndSet(false,true)){reply(id,null,"Отчёт уже отправляется. Дождитесь результата.");return;}
-            worker.execute(()->{
+            (command.equals("markIssue")?reportWorker:worker).execute(()->{
                 try{
                     if(destroyed||current.get()!=MainActivity.this)return;
                     JSONObject arg=new JSONObject(data);Object result;
@@ -243,6 +244,6 @@ public class MainActivity extends Activity {
         worker.execute(()->{try{SettingsStore.pruneSplit(this);}catch(Exception ignored){}publishState();});
         profileRefresh.wake();notifyState();
     }}
-    private void retire(){synchronized(PROFILE_LOCK){destroyed=true;if(profileRefresh!=null)profileRefresh.close();if(account!=null)account.close();ui.removeCallbacksAndMessages(null);profileWorker.shutdownNow();worker.shutdownNow();}}
+    private void retire(){synchronized(PROFILE_LOCK){destroyed=true;if(profileRefresh!=null)profileRefresh.close();if(account!=null)account.close();ui.removeCallbacksAndMessages(null);profileWorker.shutdownNow();reportWorker.shutdownNow();worker.shutdownNow();}}
     @Override protected void onDestroy(){retire();if(current.get()==this)current.clear();web.removeJavascriptInterface("Android");web.destroy();super.onDestroy();}
 }

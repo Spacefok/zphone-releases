@@ -74,7 +74,7 @@ final class ServiceProbe {
         return data.put("durationMs",(System.nanoTime()-start)/1000000);
     }
     static void collect(Context context,Diagnostics logger){
-        try{schedule(context,logger).get(20,TimeUnit.SECONDS);}catch(Exception ignored){try{logger.write("health.check",new JSONObject().put("stage","probe").put("ok",false).put("reason","timeout"));}catch(Exception ignoredAgain){}}
+        try{schedule(context,logger).get(8,TimeUnit.SECONDS);}catch(InterruptedException error){Thread.currentThread().interrupt();}catch(Exception ignored){try{logger.write("health.check",new JSONObject().put("stage","probe").put("ok",false).put("reason","timeout"));}catch(Exception ignoredAgain){}}
     }
     private static void collectNow(Context context,Diagnostics logger,TunnelService.ProbeAccess access){
         ExecutorService pool=Executors.newFixedThreadPool(12,r->{Thread t=new Thread(r,"zphone-report-probe");t.setDaemon(true);return t;});
