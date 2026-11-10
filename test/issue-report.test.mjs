@@ -120,3 +120,26 @@ test('UI has explicit privacy copy, waits for acknowledgement and guards double 
   complete({ok:true,reportId:id,state:'queued'});assert.equal((await flight).ok,true);assert.equal(issue.busy,false);
   const invalid=createIssueFlow(async()=>({ok:true}));assert.equal(await invalid.send(),null);assert.match(invalid.error,/не подтверждён/);
 });
+
+test('a stalled native reply releases UI state and never claims delivery',async()=>{
+  let late;
+  const issue=createIssueFlow(()=>new Promise(resolve=>{late=resolve;}),{timeoutMs:10});
+  assert.equal(await issue.send(),null);assert.equal(issue.busy,false);
+  assert.match(issue.error,/не подтверждён/);
+  late({ok:true,state:'sent',reportId:id});await Promise.resolve();
+  assert.match(issue.error,/не подтверждён/);
+});
+
+test('optional probes cannot prevent report delivery and a stalled upload cannot keep report busy',async t=>{
+  const {account,logger}=await accountFixture(t,async(url,body)=>({ok:true,state:'queued',reportId:body.reportId}));
+  account.collectDiagnostics=()=>new Promise(()=>{});account.diagnosticsTimeoutMs=10;
+  assert.equal((await account.report(logger,metadata,{confirmed:true,now})).ok,true);
+  let late;
+  account.collectDiagnostics=async()=>{};account.reportTimeoutMs=50;
+  account.transport=(url,body)=>new Promise(resolve=>{late=()=>resolve({ok:true,state:'queued',reportId:body.reportId});});
+  await assert.rejects(account.report(logger,metadata,{confirmed:true,now}),/не подтверждён/);
+  assert.equal(account.reportFlight,null);
+  const retained=account.pendingReport;assert(retained);
+  late();await new Promise(resolve=>setTimeout(resolve,5));
+  assert.equal(account.pendingReport,retained);
+});

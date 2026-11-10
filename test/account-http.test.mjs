@@ -1,7 +1,48 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createAccountTransport,networkCode,accountError,publicIpv4,resolveAccountHost} from '../desktop/account-http.mjs';
+import {Account} from '../desktop/account.mjs';
 const url=new URL('https://access.example/v1/device/start');
+
+test('a native fetch that ignores abort cannot block endpoint failover',async()=>{
+  let aborted=false;
+  const transport=createAccountTransport({timeoutMs:30,requestTimeoutMs:10,resolveTimeoutMs:10,
+    fetcher:async(target,{signal})=>{
+      if(target.hostname==='healthy.example')return new Response('{"state":"ready"}');
+      signal.addEventListener('abort',()=>{aborted=true;});return new Promise(()=>{});
+    },resolveHost:()=>new Promise(()=>{})});
+  const account=new Account({config:{baseUrls:['https://offline.example','https://healthy.example']},transport});
+  assert.deepEqual(await account.call('/v1/session/profiles'),{state:'ready'});
+  assert.equal(aborted,true);assert.equal(account.preferred,'https://healthy.example');
+});
+
+test('a stalled response body remains ambiguous and is not replayed',async()=>{
+  let calls=0;
+  const transport=createAccountTransport({timeoutMs:30,requestTimeoutMs:10,
+    fetcher:async()=>{calls++;return new Response(new ReadableStream({start(){}}));},
+    resolveHost:()=>assert.fail('received response must not be retried')});
+  const account=new Account({config:{baseUrls:['https://first.example','https://second.example']},transport});
+  await assert.rejects(account.call('/v1/device/redeem'),error=>error.received===true&&error.code==='ETIMEDOUT');
+  assert.equal(calls,1);
+});
+
+test('hanging encrypted DNS and resolved POST have finite deadlines',async()=>{
+  for(const phase of ['resolve','request']){
+    const transport=createAccountTransport({timeoutMs:30,requestTimeoutMs:10,resolveTimeoutMs:10,
+      fetcher:async()=>{throw Object.assign(Error('offline'),{code:'ENOTFOUND'});},
+      resolveHost:phase==='resolve'?()=>new Promise(()=>{}):async()=> '1.2.3.4',
+      postResolved:()=>new Promise(()=>{})});
+    await assert.rejects(transport(url,{}),error=>error.code==='ETIMEDOUT');
+  }
+});
+
+test('parent cancellation prevents a later endpoint from receiving credentials',async()=>{
+  const controller=new AbortController();let calls=0;
+  const transport=createAccountTransport({fetcher:async()=>{calls++;controller.abort(Object.assign(Error('cancelled'),{code:'ABORT_ERR'}));return new Promise(()=>{});}});
+  const account=new Account({config:{baseUrls:['https://first.example','https://second.example']},transport});
+  await assert.rejects(account.call('/v1/session/report',{},'secret',{signal:controller.signal}));
+  assert.equal(calls,1);
+});
 test('account transport uses native fetch and logs no device secrets or URLs',async()=>{
   const events=[];const transport=createAccountTransport({fetcher:async(input,options)=>{
     assert.equal(input.href,url.href);assert.equal(options.redirect,'error');assert.equal(options.credentials,'omit');assert.equal(options.headers.authorization,'Bearer private-token');return new Response('{"ok":true}');

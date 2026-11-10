@@ -1,6 +1,7 @@
 import https from 'node:https';
 import {isIP} from 'node:net';
 import {readJson} from '../shared/release.mjs';
+import {withDeadline} from '../shared/async-deadline.mjs';
 
 export function networkCode(error){
   const chain=[],seen=new Set();
@@ -30,8 +31,8 @@ export function publicIpv4(value){
   const [a,b]=value.split('.').map(Number);
   return a!==0&&a!==10&&a!==127&&a<224&&!(a===169&&b===254)&&!(a===172&&b>=16&&b<=31)&&!(a===192&&(b===168||b===0))&&!(a===100&&b>=64&&b<=127)&&!(a===198&&(b===18||b===19));
 }
-export async function resolveAccountHost(hostname,fetcher){
-  const response=await fetcher('https://cloudflare-dns.com/dns-query?name='+encodeURIComponent(hostname)+'&type=A',{headers:{accept:'application/dns-json'},redirect:'error',credentials:'omit',signal:AbortSignal.timeout(4000)});
+export async function resolveAccountHost(hostname,fetcher,signal=AbortSignal.timeout(4000)){
+  const response=await fetcher('https://cloudflare-dns.com/dns-query?name='+encodeURIComponent(hostname)+'&type=A',{headers:{accept:'application/dns-json'},redirect:'error',credentials:'omit',signal});
   const data=await readJson(response,32768);
   const address=data.Status===0&&data.Answer?.find(item=>item.type===1&&publicIpv4(item.data))?.data;
   if(!address)throw Object.assign(Error('DNS resolution failed'),{code:'DNS_NO_PUBLIC_ADDRESS'});
@@ -41,7 +42,7 @@ export async function resolveAccountHost(hostname,fetcher){
 export function postAtAddress(url,options,address){
   return new Promise((resolve,reject)=>{
     const req=https.request(url,{method:'POST',headers:options.headers,servername:url.hostname,rejectUnauthorized:true,agent:false,
-      lookup:(_host,opts,cb)=>opts.all?cb(null,[{address,family:4}]):cb(null,address,4),signal:AbortSignal.timeout(6000)},res=>{
+      lookup:(_host,opts,cb)=>opts.all?cb(null,[{address,family:4}]):cb(null,address,4),signal:options.signal||AbortSignal.timeout(6000)},res=>{
       if(res.statusCode!==200){res.resume();reject(Object.assign(Error('Access service response'),{status:res.statusCode,code:'HTTP_'+res.statusCode}));return;}
       const chunks=[];let size=0;
       res.on('data',chunk=>{size+=chunk.length;if(size>150000){res.destroy(Error('Response too large'));return;}chunks.push(chunk);});
@@ -50,17 +51,18 @@ export function postAtAddress(url,options,address){
     req.on('error',reject);req.end(options.body);
   });
 }
-export function createAccountTransport({fetcher=globalThis.fetch,logger,resolveHost=resolveAccountHost,postResolved=postAtAddress}={}){
+export function createAccountTransport({fetcher=globalThis.fetch,logger,resolveHost=resolveAccountHost,postResolved=postAtAddress,timeoutMs=10000,requestTimeoutMs=6000,resolveTimeoutMs=4000}={}){
   const secureDnsOrigins=new Set();
-  return async(url,data,token)=>{
-    const options={method:'POST',headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:JSON.stringify(data),redirect:'error',credentials:'omit',signal:AbortSignal.timeout(6000)};
+  return async(url,data,token,{signal:parentSignal}={})=>{
+    const options={method:'POST',headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:JSON.stringify(data),redirect:'error',credentials:'omit'};
     const started=Date.now(),operation=url.pathname.split('/').at(-1);let received=false;
+    try{return await withDeadline(async signal=>{
     const secureRequest=async()=>{
       let phase='resolve';const fallbackStarted=Date.now();
       try{
-        const address=await resolveHost(url.hostname,fetcher);
+        const address=await withDeadline(stageSignal=>resolveHost(url.hostname,fetcher,stageSignal),resolveTimeoutMs,signal);
         phase='request';
-        const result=await postResolved(url,options,address);
+        const result=await withDeadline(stageSignal=>postResolved(url,{...options,signal:stageSignal},address),requestTimeoutMs,signal);
         secureDnsOrigins.add(url.origin);
         logger?.write('account.request',{operation,transport:'secure-dns',phase,ok:true,durationMs:Date.now()-fallbackStarted});return result;
       }catch(error){
@@ -71,18 +73,21 @@ export function createAccountTransport({fetcher=globalThis.fetch,logger,resolveH
     // Redeem uses the proven path directly, never a blind retry of a single-use request.
     if(secureDnsOrigins.has(url.origin))return secureRequest();
     try{
-      const response=await fetcher(url,options);
-      received=true;
-      if(!response.ok)throw Object.assign(Error('Access service response'),{status:response.status,code:'HTTP_'+response.status});
-      const result=await readJson(response,150000);
+      const result=await withDeadline(async stageSignal=>{
+        const response=await fetcher(url,{...options,signal:stageSignal});
+        received=true;
+        if(!response.ok)throw Object.assign(Error('Access service response'),{status:response.status,code:'HTTP_'+response.status});
+        return readJson(response,150000);
+      },requestTimeoutMs,signal);
       logger?.write('account.request',{operation,transport:'system',ok:true,durationMs:Date.now()-started});return result;
     }catch(error){
       const code=networkCode(error);
       logger?.write('account.request',{operation,transport:'system',ok:false,code,status:error.status,durationMs:Date.now()-started});
       // Do not replay a redeem/logout after an ambiguous, possibly delivered request.
       const beforeSend=/NOTFOUND|AGAIN|NAME_NOT_RESOLVED|CERT|TLS|SSL|CONNECTION_REFUSED|ECONNREFUSED|CONNECT_TIMEOUT/.test(code);
-      if(received||error.status||(!beforeSend&&['redeem','logout'].includes(operation)))throw accountError(Object.assign(error,{received:received&&!error.status}));
+      if(signal.aborted||received||error.status||(!beforeSend&&['redeem','logout'].includes(operation)))throw accountError(Object.assign(error,{received:received&&!error.status}));
       return secureRequest();
     }
+    },timeoutMs,parentSignal);}catch(error){throw accountError(Object.assign(error,{received:received&&!error.status||error.received===true}));}
   };
 }

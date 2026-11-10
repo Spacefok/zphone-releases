@@ -118,11 +118,12 @@ function modal(){if(!overlay)return '';let title,content;
     title='Отметить сбой';
     const authorized=state.account?.state==='authorized';
     content=authorized?`<p class="modal-copy">${REPORT_CONSENT}</p>${issue.error?`<p class="inline-error" role="alert">${escape(issue.error)}</p>`:''}<div aria-live="polite" aria-busy="${issue.busy}">${issue.busy?'<p class="modal-copy" role="status">Отправляем отчёт…</p>':''}${button('sendIssue',issue.error?'Повторить отправку':'Отправить',issue.busy?'loader-circle':'upload','primary full',issue.busy?'disabled':'')}</div>`:`<p class="modal-copy">Для отправки сбоя войдите через бота в разделе «Аккаунт». Импорт файла не выполняет вход.</p>${button('nav','Перейти в аккаунт','user-round','primary full','data-value="account"')}`;
-    content+=button('closeModal','Отмена','x','secondary full',issue.busy?'disabled':'');
+    if(issue.error&&platform==='windows')content+=button('exportDiagnostics','Сохранить диагностику','download','secondary full');
+    content+=button('closeModal',issue.busy?'Скрыть':'Отмена','x','secondary full');
   }
   else if(overlay==='switch'){title='Сменить подключение?';content=`<p class="modal-copy">Текущее соединение будет отключено перед выбором нового.</p>${button('confirmSwitch','Отключить соединение','power','primary full')}`;}
   else{title='Соединение';content=details();}
-  return `<div class="overlay"><section class="sheet" role="dialog" aria-modal="true" aria-label="${title}"><div class="sheet-head"><h2>${title}</h2><button type="button" class="icon-button" data-action="closeModal" aria-label="Закрыть" ${overlay==='issue'&&issue.busy?'disabled':''}>${icon('x')}</button></div>${content}</section></div>`;
+  return `<div class="overlay"><section class="sheet" role="dialog" aria-modal="true" aria-label="${title}"><div class="sheet-head"><h2>${title}</h2><button type="button" class="icon-button" data-action="closeModal" aria-label="Закрыть">${icon('x')}</button></div>${content}</section></div>`;
 }
 function render(){
   const nextMotion={view,overlay,message,status:state.connection.status,theme:state.settings.theme==='system'?(themeMedia.matches?'dark':'light'):state.settings.theme,startWithWindows:Boolean(state.startup?.enabled),startInTray:state.settings.startInTray===true};
@@ -157,7 +158,7 @@ root.addEventListener('click',async event=>{
   if(action==='nav'){view=value;overlay=null;message='';render();window.scrollTo(0,0);return;}
   if(action==='showUpdates'){view='settings';overlay=null;message='';render();root.querySelector('.updates')?.scrollIntoView({block:'start'});return;}
   if(action==='dismiss'){message='';render();return;}
-  if(action==='closeModal'){if(overlay==='issue'&&issue.busy)return;overlay=null;render();return;}
+  if(action==='closeModal'){overlay=null;render();return;}
   if(action==='details'){overlay='details';render();root.querySelector('[data-action="closeModal"]')?.focus();return;}
   if(action==='picker'){nextPicker=value;overlay=active()?'switch':value;render();root.querySelector('[data-action="closeModal"]')?.focus();return;}
   if(action==='confirmSwitch'){overlay=null;waitingPicker=true;await call('disconnect');if(!active()){waitingPicker=false;overlay=nextPicker;}render();return;}
@@ -188,8 +189,11 @@ root.addEventListener('click',async event=>{
   if(action==='sendIssue'){
     if(overlay!=='issue'||issue.busy||state.account?.state!=='authorized')return;
     const flight=issue.send();render();const result=await flight;
-    if(result){overlay=null;message=REPORT_ACCEPTED;}render();return;
+    if(result){if(overlay==='issue')overlay=null;message=REPORT_ACCEPTED;}
+    else if(overlay!=='issue')message=issue.error;
+    render();return;
   }
+  if(action==='exportDiagnostics'){const saved=await call(action);if(saved&&!saved.canceled){message='Диагностика сохранена. Пришлите архив в поддержку.';render();}return;}
   if(['import','testPage','openLogs','openSupport','notificationSettings'].includes(action))await call(action);
 });
 root.addEventListener('change',async event=>{
@@ -208,8 +212,8 @@ root.addEventListener('change',async event=>{
   }
 });
 root.addEventListener('input',event=>{if(event.target.id==='app-search'){appQuery=event.target.value;root.querySelector('.app-results').innerHTML=appRows();}});
-root.addEventListener('keydown',event=>{
-  if(event.key==='Escape'&&overlay&&!(overlay==='issue'&&issue.busy)){overlay=null;render();}
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&overlay){overlay=null;render();}
   if(event.key==='Tab'&&overlay){const items=[...root.querySelectorAll('.sheet button:not(:disabled)')],first=items[0],last=items.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}
 });
 subscribe(value=>{acceptState(value);if(waitingPicker&&!active()){waitingPicker=false;overlay=nextPicker;}render();});

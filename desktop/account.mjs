@@ -1,15 +1,18 @@
 import {createAccountTransport} from './account-http.mjs';
 import {accessEndpoints,canRetryAccess} from '../shared/account-policy.mjs';
 import {createIssueReport,REPORT_BYTES,REPORT_WINDOW_MS,reportFailure} from './diagnostics-report.mjs';
+import {withDeadline} from '../shared/async-deadline.mjs';
 export class Account {
-  constructor({config,readToken,writeToken,transport=createAccountTransport(),collectDiagnostics=async()=>{}}){Object.assign(this,{config,readToken,writeToken,transport,collectDiagnostics});this.pending=null;this.state={state:config?.baseUrl?'signed_out':'unconfigured'};}
+  constructor({config,readToken,writeToken,transport=createAccountTransport(),collectDiagnostics=async()=>{},reportTimeoutMs=40000,diagnosticsTimeoutMs=8000}){Object.assign(this,{config,readToken,writeToken,transport,collectDiagnostics,reportTimeoutMs,diagnosticsTimeoutMs});this.pending=null;this.state={state:config?.baseUrl?'signed_out':'unconfigured'};}
   snapshot(){return {...this.state};}
-  async call(route,data={},token){
+  async call(route,data={},token,{signal}={}){
     const endpoints=accessEndpoints(this.config);
     if(this.preferred)endpoints.sort((a,b)=>Number(b===this.preferred)-Number(a===this.preferred));
     for(let index=0;index<endpoints.length;index++){
+      signal?.throwIfAborted();
       try{
-        const value=await this.transport(new URL(route,endpoints[index]),data,token);
+        const value=await this.transport(new URL(route,endpoints[index]),data,token,{signal});
+        signal?.throwIfAborted();
         this.preferred=endpoints[index];return value;
       }catch(error){if(index===endpoints.length-1||!canRetryAccess(route,error))throw error;}
     }
@@ -48,10 +51,10 @@ export class Account {
     if(confirmed!==true)throw Error('Подтвердите отправку отчёта.');
     if(!this.token)throw Error('Для отправки сбоя откройте «Аккаунт» и войдите через бота. Импорт файла не выполняет вход.');
     if(this.reportFlight)return this.reportFlight;
-    this.reportFlight=this.sendReport(logger,metadata,now);
-    try{return await this.reportFlight;}finally{this.reportFlight=null;}
+    this.reportFlight=withDeadline(signal=>this.sendReport(logger,metadata,now,signal),this.reportTimeoutMs);
+    try{return await this.reportFlight;}catch(error){throw reportFailure(error);}finally{this.reportFlight=null;}
   }
-  async sendReport(logger,metadata,now){
+  async sendReport(logger,metadata,now,signal){
     const token=this.token;
     logger.write('user.mark',metadata);
     const liveTime=now===undefined;
@@ -59,16 +62,20 @@ export class Account {
     try{
       if(!this.pendingReport||this.pendingReport.token!==token||now-this.pendingReport.time>REPORT_WINDOW_MS||now<this.pendingReport.time){
         this.clearReport();
-        try{await this.collectDiagnostics();}catch{logger.write('network.snapshot_failed',{stage:'probe'});}
+        try{await withDeadline(()=>this.collectDiagnostics(),this.diagnosticsTimeoutMs,signal);}catch{logger.write('network.snapshot_failed',{stage:'probe'});}
+        signal?.throwIfAborted();
         if(liveTime)now=Date.now();
-        this.pendingReport={token,time:now,body:await createIssueReport(logger,metadata,{now})};
+        const body=await createIssueReport(logger,metadata,{now});
+        signal?.throwIfAborted();
+        this.pendingReport={token,time:now,body};
         const pending=this.pendingReport;
         this.reportExpiry=setTimeout(()=>{if(this.pendingReport===pending)this.clearReport();},REPORT_WINDOW_MS);this.reportExpiry.unref();
       }
       const body=this.pendingReport.body;
+      signal?.throwIfAborted();
       if(this.token!==token)throw Object.assign(Error('Session changed'),{status:401});
       if(Buffer.byteLength(JSON.stringify(body))>REPORT_BYTES)throw Error('Report too large');
-      const result=await this.call('/v1/session/report',body,token);
+      const result=await this.call('/v1/session/report',body,token,{signal});
       if(result?.ok!==true||result.reportId!==body.reportId||!['queued','sent'].includes(result.state))throw Error('Invalid report acknowledgement');
       this.clearReport();logger.write('report.accepted',{ok:true});
       return {ok:true,reportId:result.reportId,state:result.state};

@@ -2,7 +2,7 @@ const path=require('node:path'),fs=require('node:fs/promises'),os=require('node:
 const {chromium}=require(process.env.ZPHONE_PLAYWRIGHT_PATH||'playwright');
 const root=path.resolve(__dirname,'..');
 (async()=>{
-  const output=process.argv[2]||await fs.mkdtemp(path.join(os.tmpdir(),'zphone-report-ui-'));
+  const output=process.argv[2]?path.resolve(process.argv[2]):await fs.mkdtemp(path.join(os.tmpdir(),'zphone-report-ui-'));
   await fs.mkdir(output,{recursive:true});const dist=path.join(output,'web');
   const {build}=await import('vite');await build({root,build:{outDir:dist,emptyOutDir:false},logLevel:'error'});
   const server=http.createServer(async(req,res)=>{
@@ -49,10 +49,16 @@ const root=path.resolve(__dirname,'..');
       await page.locator('[data-action="sendIssue"]').click();assert.equal(await calls(),1);
       assert.equal(await page.locator('[data-action="sendIssue"]').isDisabled(),true);
       await page.evaluate(()=>document.querySelector('[data-action="sendIssue"]').dispatchEvent(new MouseEvent('click',{bubbles:true})));
-      await page.keyboard.press('Escape');assert.equal(await calls(),1);assert.equal(await page.locator('.sheet').count(),1);
       assert.match(await page.locator('.sheet').innerText(),/Отправляем/);
-      await page.evaluate(()=>window.completeReport('fail'));await page.waitForFunction(()=>!document.querySelector('[data-action="sendIssue"]').disabled);
+      await page.keyboard.press('Escape');assert.equal(await calls(),1);assert.equal(await page.locator('.sheet').count(),0);
+      await page.locator(`${nav} [data-value="settings"]`).click();
+      await page.locator(`${nav} [data-value="help"]`).click();
+      await page.evaluate(()=>window.completeReport('fail'));
+      await page.waitForFunction(()=>!document.querySelector('[data-action="markIssue"]').disabled);
+      assert.match(await page.locator('.notice').innerText(),/Сеть недоступна/);
+      await page.locator('[data-action="markIssue"]').click();
       assert.match(await page.locator('.sheet').innerText(),/Сеть недоступна/);
+      assert.equal(await page.locator('[data-action="exportDiagnostics"]').count(),platform==='windows'?1:0);
       await page.locator('[data-action="sendIssue"]').click();assert.equal(await calls(),2);
       await page.evaluate(()=>window.completeReport('bad'));await page.waitForFunction(()=>!document.querySelector('[data-action="sendIssue"]').disabled);
       assert.match(await page.locator('.sheet').innerText(),/не подтверждён/);
@@ -62,7 +68,7 @@ const root=path.resolve(__dirname,'..');
       assert.match(await page.locator('.notice').innerText(),/принят сервером/);
       const bounds=await page.evaluate(()=>({width:document.documentElement.scrollWidth,viewport:innerWidth,calls:window.testCalls,connection:window.testState.connection.status}));
       assert(bounds.width<=bounds.viewport);assert.equal(bounds.connection,'connected');assert(bounds.calls.every(x=>['snapshot','markIssue'].includes(x.command)));assert.deepEqual(errors,[]);
-      results.push({platform,width,height,cancel:true,consent:true,unsigned:true,doubleClick:true,progress:true,retry:true,invalidAck:true,backendAccepted:true});
+      results.push({platform,width,height,cancel:true,consent:true,unsigned:true,doubleClick:true,progress:true,hideWhileSending:true,navigationWhileSending:true,offlineExport:platform==='windows',retry:true,invalidAck:true,backendAccepted:true});
       await context.close();
     }
     await fs.writeFile(path.join(output,'issue-report-ui.json'),JSON.stringify(results,null,2));console.log(JSON.stringify({output,results}));
