@@ -111,7 +111,10 @@ final class Account {
         String bot=config().optString("botUsername","");if(!bot.matches("[A-Za-z0-9_]{5,32}"))throw new Exception("Вход через бота ещё не настроен.");
         final long request;
         synchronized(guard){if(closed)throw new Exception("Account closed");if(pending!=null&&pending.getLong("expires")*1000>System.currentTimeMillis())return botLink();request=++generation;}
-        JSONObject result=call("/v1/device/start",new JSONObject().put("platform","android"),null);
+        JSONObject body=new JSONObject().put("platform","android");
+        String proof=token==null?null:AccountRecovery.proof(new ProfileStore(context).read());
+        if(proof!=null)body.put("recoveryProof",proof);
+        JSONObject result=call("/v1/device/start",body,null);
         if(!result.getString("code").matches("[A-Za-z0-9_-]{32}")||!result.getString("secret").matches("[A-Za-z0-9_-]{43}")||!result.getString("number").matches("[0-9]{6}"))throw new Exception("Invalid login response");
         synchronized(guard){if(closed||request!=generation)throw new Exception("Account changed");pending=result;session=null;state="pending";message="";return botLink();}
     }

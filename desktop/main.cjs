@@ -6,7 +6,7 @@ const path=require('node:path');
 const os=require('node:os');
 let window,engine,logger,networkTimer,updateTimer,trayController,profileRefresh,serviceProbes,bundle=null,settings={location:'auto',protocol:'auto',theme:'system',mode:'isolated',startInTray:false,autoCheckUpdates:true,autoDownloadUpdates:false,split:{mode:'all',apps:[]}},quitting=false,showRequested=false;
 const root=path.resolve(__dirname,'..');
-const build='windows-20261110.1';
+const build='windows-20261112.1';
 app.setName('Zphone');
 app.setPath('userData',path.join(app.getPath('appData'),'ZphonePreview'));
 if(!app.requestSingleInstanceLock()){app.quit();}
@@ -62,6 +62,8 @@ app.whenReady().then(async()=>{
     readToken:async()=>{try{return safeStorage.decryptString(await fs.readFile(accountVault));}catch{return null;}},
     writeToken:async token=>{if(!token){await fs.rm(accountVault,{force:true});return;}if(!safeStorage.isEncryptionAvailable())throw Error('Защищённое хранилище недоступно.');await fs.writeFile(accountVault,safeStorage.encryptString(token));}
   });
+  const {recoveryProof}=await import('./account-recovery.mjs');
+  account.recoveryProof=()=>recoveryProof(bundle);
   await account.restore();
   const installed=app.isPackaged&&await fs.access(path.join(process.resourcesPath,'app-update.yml')).then(()=>true,()=>false);
   updates=new Updates({config:updateConfig,version:VERSION,installed,logger,notify,fetcher:(url,options)=>net.fetch(String(url),options)});

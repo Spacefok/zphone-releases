@@ -30,7 +30,8 @@ export class Account {
   async start(){
     if(!this.config?.baseUrl||!/^\w{5,32}$/.test(this.config.botUsername||''))throw Error('Вход через бота ещё не настроен.');
     if(this.pending?.expires*1000>Date.now())return this.botLink();
-    const value=await this.call('/v1/device/start',{platform:'windows'});
+    const proof=this.token?this.recoveryProof?.():undefined;
+    const value=await this.call('/v1/device/start',{platform:'windows',...(proof?{recoveryProof:proof}:{})});
     if(!/^[A-Za-z0-9_-]{32}$/.test(value.code)||!/^[A-Za-z0-9_-]{43}$/.test(value.secret)||!/^\d{6}$/.test(value.number)||!Number.isFinite(value.expires))throw Error('Invalid login response');
     this.pending=value;this.state={state:'pending',number:value.number,expires:value.expires};
     return this.botLink();

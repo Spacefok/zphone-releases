@@ -50,10 +50,13 @@ if(!output)throw Error('Output directory required');
       await page.locator(`${nav} [data-value="account"]`).click();
       for(const status of ['pending','refreshing','current','deferred','retry','sign_in']){
         await page.evaluate(status=>{window.qaState.profileSync={state:status};window.qaNotify(window.qaState);},status);
-        assert((await page.locator('.profile-sync-status').innerText()).length>0);
+        if(status==='sign_in')assert.equal(await page.locator('.account-status').innerText(),'Нужен повторный вход');
+        else assert((await page.locator('.profile-sync-status').innerText()).length>0);
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
       }
-      assert.equal(await page.getByRole('button',{name:'Войти заново',exact:true}).count(),1);
+      assert.equal(await page.getByRole('button',{name:'Войти через Telegram',exact:true}).count(),1);
+      assert.equal(await page.getByRole('button',{name:'Обновить подключения',exact:true}).count(),0);
+      await page.screenshot({path:path.join(output,`${platform}-${width}-${theme}-reauth.png`)});
       assert.deepEqual(errors,[]);
       results.push({platform,width,height,theme,flagsLoaded:true,availableOnly:true,emptyCatalogHidden:true});
       await page.close();
